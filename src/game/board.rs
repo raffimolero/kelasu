@@ -307,11 +307,37 @@ impl Game {
             }
             Move::Merge { dest, blanks } => todo!(),
         }
+
+        // post-move checks
+        let victory_by_occupation = [44, 45, 54, 55]
+            .map(Pos)
+            .into_iter()
+            .all(|pos| self.board[pos].0.map_or(false, |p| p.team == *turn));
+        if victory_by_occupation {
+            self.state = GameState::Win(*turn);
+            return Ok(());
+        }
+
         if *power <= 0 {
             turn.flip();
+            *power = self
+                .board
+                .tiles
+                .iter()
+                .filter(|t| {
+                    t.0.map_or(false, |p| {
+                        p == Piece {
+                            team: *turn,
+                            kind: PieceKind::Stone,
+                        }
+                    })
+                })
+                .count() as i8;
         }
         Ok(())
     }
+
+    fn post_move(&mut self) {}
 }
 
 #[test]
