@@ -1,9 +1,15 @@
-use std::{fmt::Display, str::FromStr};
+use std::{
+    fmt::Display,
+    ops::{Index, IndexMut},
+    str::FromStr,
+};
 
 /// a single-character "icon" that an object can have
 pub trait Icon {
     fn icon(&self) -> char;
 }
+
+pub type Pos = u8;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Team {
@@ -46,7 +52,7 @@ impl Icon for Piece {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tile(Option<Piece>);
+pub struct Tile(pub Option<Piece>);
 
 impl TryFrom<char> for Tile {
     type Error = &'static str;
@@ -107,6 +113,20 @@ impl Board {
         "
         .parse()
         .unwrap()
+    }
+}
+
+impl Index<Pos> for Board {
+    type Output = Tile;
+
+    fn index(&self, index: Pos) -> &Self::Output {
+        &self.tiles[index as usize]
+    }
+}
+
+impl IndexMut<Pos> for Board {
+    fn index_mut(&mut self, index: Pos) -> &mut Self::Output {
+        &mut self.tiles[index as usize]
     }
 }
 

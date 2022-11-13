@@ -1,9 +1,6 @@
+use super::types::{Board, Piece, Pos, Team, Tile};
 use crate::util::input;
-
-use super::types::{Board, Team};
 use std::{fmt::Display, str::FromStr};
-
-pub type Pos = u8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Move {
@@ -15,7 +12,10 @@ pub enum InvalidMove {
     UnknownMove(String),
     MissingParameter(&'static str),
     InvalidParameter(&'static str),
-    TileOutOfBounds,
+    GameOver,
+    EmptyTile,
+    NotYourPiece,
+    FriendlyFire,
     InvalidPieceMove,
 }
 
@@ -56,31 +56,68 @@ impl FromStr for Move {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum GameState {
+    Ongoing { turn: Team, power: u8 },
+    Win(Team),
+    Draw,
+}
+
+impl Display for GameState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GameState::Ongoing { turn, power } => {
+                writeln!(f, "{turn:?}'s turn.")?;
+                writeln!(f, "Remaining Stone Power: {power}.")
+            }
+            GameState::Win(team) => writeln!(f, "Winner: {team:?}."),
+            GameState::Draw => writeln!(f, "Draw."),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Game {
-    turn: Team,
-    remaining_stone_power: u8,
+    state: GameState,
     board: Board,
 }
 
 impl Game {
     pub fn new() -> Self {
         Self {
-            turn: Team::default(),
-            remaining_stone_power: 4,
+            state: GameState::Ongoing {
+                turn: Team::Blue,
+                power: 4,
+            },
             board: Board::new(),
         }
     }
 
     pub fn get_move(&self) -> Result<Move, InvalidMove> {
-        let p_move = input("Input a move.").parse::<Move>()?;
         /*
         TODO:
         check bounds - ok
-        check if piece exists
+        check if piece exists - ok
         check if move is valid for piece
             check if path is not blocked
             check if not moving towards allies
         */
+        let GameState::Ongoing { turn, power } = self.state else {
+            return Err(InvalidMove::GameOver);
+        };
+        let p_move = input("Input a move.").parse::<Move>()?;
+        match p_move {
+            Move::Move { from, to } => {
+                let Tile(Some(from)) = self.board[from] else {
+                    return Err(InvalidMove::EmptyTile);
+                };
+                if from.team != turn {
+                    return Err(InvalidMove::NotYourPiece);
+                }
+                if self.board[to].0.map_or(false, |t| t.team == turn) {
+                    return Err(InvalidMove::FriendlyFire);
+                }
+            }
+        }
         todo!()
     }
 
@@ -95,7 +132,7 @@ impl Game {
 
 impl Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{:?} team's turn.", self.turn)?;
+        writeln!(f, "{}", self.state)?;
         writeln!(f, "{}", self.board)
     }
 }
