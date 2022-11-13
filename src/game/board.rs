@@ -152,7 +152,7 @@ pub struct VerifiedMove(Move);
 #[derive(Debug)]
 pub enum InvalidMove {
     Cancelled,
-    UnknownMove(String),
+    UnknownMove,
     MissingParameter(&'static str),
     InvalidParameter(&'static str),
     GameOver,
@@ -180,8 +180,12 @@ impl FromStr for Move {
             }
             t.parse::<i8>().map(Pos).map_err(|_| INVALID_POS)
         };
-        match next_token("Valid moves:\n\tmove yx to yx\n\tmerge yx with yx yx ...")? {
-            "resign" => Ok(Self::Resign),
+        match next_token("you can type `help`")? {
+            "help" => {
+                println!("Valid moves:\n\tmove yx to yx\n\tmerge yx with yx yx ...");
+                Err(InvalidMove::Cancelled)
+            }
+            "resign" | "exit" | "quit" => Ok(Self::Resign),
             "move" => {
                 let from = next_token("Please specify which position to come from, as an yx coordinate from 00 to 99.")
                     .and_then(get_pos)?;
@@ -195,7 +199,7 @@ impl FromStr for Move {
                 Ok(Self::Move { from, to })
             }
             "merge" => todo!(),
-            cmd => Err(InvalidMove::UnknownMove(cmd.to_owned())),
+            cmd => Err(InvalidMove::UnknownMove),
         }
     }
 }
@@ -243,9 +247,9 @@ impl Game {
         matches!(self.state, GameState::Ongoing { .. })
     }
 
-    pub fn get_move(&self) -> Result<Move, InvalidMove> {
+    pub fn get_move(&self) -> Result<VerifiedMove, InvalidMove> {
         let p_move = input("Input a move.").parse::<Move>()?;
-        Ok(p_move)
+        self.verify_move(p_move)
     }
 
     pub fn verify_piece_move(
@@ -276,7 +280,9 @@ impl Game {
         let moves = piece.moves();
         let (move_kind, range) = moves[ray_index];
         if range < dist {
-            return Err(InvalidMove::InvalidPieceMove("The destination is too far."));
+            return Err(InvalidMove::InvalidPieceMove(
+                "The destination cannot be reached by that piece.",
+            ));
         }
 
         if move_kind != MoveKind::Recall {
@@ -471,7 +477,6 @@ fn test_recall() {
 
 impl Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", self.state)?;
-        writeln!(f, "{}", self.board)
+        writeln!(f, "{}{}", self.state, self.board)
     }
 }
