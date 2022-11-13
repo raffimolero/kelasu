@@ -1,4 +1,4 @@
-pub mod logic;
-pub mod types;
+pub mod board;
+pub mod piece;
 
-pub use logic::Game;
+pub use board::Game;

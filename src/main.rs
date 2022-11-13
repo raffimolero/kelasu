@@ -2,7 +2,7 @@ mod game;
 mod util;
 
 use crate::{
-    game::{logic::Move, Game},
+    game::{board::Move, Game},
     util::input,
 };
 
