@@ -42,20 +42,43 @@ pub struct Board {
 
 impl Board {
     pub fn new() -> Self {
+        // "
+        // BBBBBBBBBB
+        // BBBBBBBBBB
+        // S.S....S.S
+        // ..........
+        // ....::....
+        // ....::....
+        // ..........
+        // s.s....s.s
+        // bbbbbbbbbb
+        // bbbbbbbbbb
+        // "
         "
-        BBBBBBBBBB
-        BBBBBBBBBB
-        S.S....S.S
+        SWWWWWWWWW
+        S.........
+        S.........
         ..........
-        ....::....
-        ....::....
         ..........
-        s.s....s.s
-        bbbbbbbbbb
-        bbbbbbbbbb
+        ..........
+        ..........
+        .........s
+        .........s
+        wwwwwwwwws
         "
         .parse()
         .unwrap()
+    }
+
+    pub fn stone_count(&self, team: Team) -> i8 {
+        let stone = Piece {
+            team,
+            kind: PieceKind::Stone,
+        };
+        self.tiles
+            .iter()
+            .filter(|t| t.0.map_or(false, |p| p == stone))
+            .count() as i8
     }
 }
 
@@ -122,8 +145,13 @@ pub enum Move {
     Merge { dest: Pos, blanks: Vec<Pos> },
 }
 
+/// just a way to encode trustedness in the type system
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedMove(Move);
+
 #[derive(Debug)]
 pub enum InvalidMove {
+    Cancelled,
     UnknownMove(String),
     MissingParameter(&'static str),
     InvalidParameter(&'static str),
@@ -166,6 +194,7 @@ impl FromStr for Move {
                 .and_then(get_pos)?;
                 Ok(Self::Move { from, to })
             }
+            "merge" => todo!(),
             cmd => Err(InvalidMove::UnknownMove(cmd.to_owned())),
         }
     }
@@ -199,18 +228,23 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Self {
+        let board = Board::new();
+        let turn = Team::Blue;
         Self {
             state: GameState::Ongoing {
-                turn: Team::Blue,
-                power: 4,
+                turn,
+                power: board.stone_count(turn),
             },
-            board: Board::new(),
+            board,
         }
+    }
+
+    pub fn is_ongoing(&self) -> bool {
+        matches!(self.state, GameState::Ongoing { .. })
     }
 
     pub fn get_move(&self) -> Result<Move, InvalidMove> {
         let p_move = input("Input a move.").parse::<Move>()?;
-        self.verify_move(&p_move)?;
         Ok(p_move)
     }
 
@@ -278,29 +312,29 @@ impl Game {
         }
     }
 
-    pub fn verify_move(&self, p_move: &Move) -> Result<(), InvalidMove> {
+    pub fn verify_move(&self, p_move: Move) -> Result<VerifiedMove, InvalidMove> {
         let GameState::Ongoing { turn, power: _ } = self.state else {
             return Err(InvalidMove::GameOver);
         };
         match p_move {
-            Move::Resign => Ok(()),
-            &Move::Move { from, to } => Self::verify_piece_move(&self.board, turn, from, to),
+            Move::Resign => Ok(VerifiedMove(Move::Resign)),
+            Move::Move { from, to } => {
+                Self::verify_piece_move(&self.board, turn, from, to).map(|_| VerifiedMove(p_move))
+            }
             Move::Merge { dest, blanks } => todo!(),
         }
     }
 
-    pub fn make_move(&mut self, p_move: &Move) -> Result<(), InvalidMove> {
-        self.verify_move(&p_move)?;
-
+    pub fn make_move(&mut self, p_move: VerifiedMove) {
         let GameState::Ongoing { turn, power } = &mut self.state else {
             unreachable!()
         };
-        match p_move {
+        match p_move.0 {
             Move::Resign => {
                 self.state = GameState::Win(turn.flip());
-                return Ok(());
+                return;
             }
-            &Move::Move { from, to } => {
+            Move::Move { from, to } => {
                 let is_conversion = self.board[from]
                     .0
                     .map_or(false, |p| p.kind == PieceKind::Diplomat);
@@ -322,7 +356,7 @@ impl Game {
             .all(|pos| self.board[pos].0.map_or(false, |p| p.team == *turn));
         if victory_by_occupation {
             self.state = GameState::Win(*turn);
-            return Ok(());
+            return;
         }
 
         let enemy_piece_count = self
@@ -333,33 +367,20 @@ impl Game {
             .count() as i8;
         if enemy_piece_count == 0 {
             self.state = GameState::Win(*turn);
-            return Ok(());
+            return;
         }
 
-        let enemy_stone = Piece {
-            team: turn.flip(),
-            kind: PieceKind::Stone,
-        };
-        let enemy_stone_count = self
-            .board
-            .tiles
-            .iter()
-            .filter(|t| t.0.map_or(false, |p| p == enemy_stone))
-            .count() as i8;
-
+        let enemy_stone_count = self.board.stone_count(turn.flip());
         if enemy_stone_count == 0 {
             self.state = GameState::Win(*turn);
-            return Ok(());
+            return;
         }
 
         if *power <= 0 {
             *turn = turn.flip();
             *power = enemy_stone_count;
         }
-        Ok(())
     }
-
-    fn post_move(&mut self) {}
 }
 
 #[test]
@@ -374,11 +395,13 @@ fn test_diplomat() {
         kind: PieceKind::Warrior,
     }));
     println!("{game}");
-    game.make_move(&Move::Move {
-        from: Pos(30),
-        to: Pos(21),
-    })
-    .unwrap();
+    game.make_move(
+        game.verify_move(Move::Move {
+            from: Pos(30),
+            to: Pos(21),
+        })
+        .unwrap(),
+    );
     println!("{game}");
 }
 
@@ -405,7 +428,7 @@ fn test_reverse_move() {
         .unwrap(),
     };
     println!("{game}");
-    game.make_move(&Move::Move {
+    game.verify_move(Move::Move {
         from: Pos(00),
         to: Pos(10),
     })
@@ -436,11 +459,13 @@ fn test_recall() {
         .unwrap(),
     };
     println!("{game}");
-    game.make_move(&Move::Move {
-        from: Pos(00),
-        to: Pos(90),
-    })
-    .unwrap();
+    game.make_move(
+        game.verify_move(Move::Move {
+            from: Pos(00),
+            to: Pos(90),
+        })
+        .unwrap(),
+    );
     println!("{game}");
 }
 
