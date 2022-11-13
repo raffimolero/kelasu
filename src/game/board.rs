@@ -1,4 +1,4 @@
-use super::piece::{Icon, MoveKind, Piece, Team, Tile};
+use super::piece::{Icon, MoveKind, Piece, PieceKind, Team, Tile};
 use crate::util::input;
 use std::{
     fmt::Display,
@@ -171,7 +171,7 @@ impl FromStr for Move {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameState {
-    Ongoing { turn: Team, power: u8 },
+    Ongoing { turn: Team, power: i8 },
     Win(Team),
     Draw,
 }
@@ -243,42 +243,45 @@ impl Game {
             return Err(InvalidMove::InvalidPieceMove("The destination is too far."));
         }
 
-        let mut temp = from
-            .shift(dx, dy)
-            .expect("from and to are guaranteed to be within bounds.");
-        for _ in 1..range {
-            if board[temp].0.is_some() {
-                return Err(InvalidMove::InvalidPieceMove(
-                    "There is another piece in the way.",
-                ));
+        if move_kind != MoveKind::Recall {
+            let mut temp = from;
+            for _ in 1..range {
+                temp = temp
+                    .shift(dx, dy)
+                    .expect("from and to are guaranteed to be within bounds.");
+                if board[temp].0.is_some() {
+                    return Err(InvalidMove::InvalidPieceMove(
+                        "There is another piece in the way.",
+                    ));
+                }
             }
-            temp = temp
-                .shift(dx, dy)
-                .expect("from and to are guaranteed to be within bounds.");
         }
 
         match move_kind {
-            MoveKind::MoveOnly if board[temp].0.is_some() => Err(InvalidMove::InvalidPieceMove(
+            MoveKind::MoveOnly if board[to].0.is_some() => Err(InvalidMove::InvalidPieceMove(
                 "There is another piece in the way.",
             )),
-            MoveKind::CaptureOnly | MoveKind::Convert if board[temp].0.is_none() => {
+            MoveKind::CaptureOnly | MoveKind::Convert if board[to].0.is_none() => {
                 Err(InvalidMove::InvalidPieceMove(
                     "That piece must capture something in that direction.",
                 ))
             }
-            MoveKind::MoveMoveCapture if dist == 1 && board[temp].0.is_some() => Err(
+            MoveKind::MoveMoveCapture if dist == 1 && board[to].0.is_some() => Err(
                 InvalidMove::InvalidPieceMove("Runners cannot capture within a range of 1."),
             ),
+            MoveKind::Recall if dist < range => Err(InvalidMove::InvalidPieceMove(
+                "Warriors can only return if they are on the opposite row.",
+            )),
             _ => Ok(()),
         }
     }
 
     pub fn verify_move(&self, p_move: &Move) -> Result<(), InvalidMove> {
-        let GameState::Ongoing { turn, power } = self.state else {
+        let GameState::Ongoing { turn, power: _ } = self.state else {
             return Err(InvalidMove::GameOver);
         };
         match p_move {
-            Move::Move { from, to } => Self::verify_piece_move(&self.board, turn, *from, *to),
+            &Move::Move { from, to } => Self::verify_piece_move(&self.board, turn, from, to),
             Move::Merge { dest, blanks } => todo!(),
         }
     }
@@ -290,10 +293,107 @@ impl Game {
             unreachable!()
         };
         match p_move {
-            Move::Move { from, to } => todo!(),
+            &Move::Move { from, to } => {
+                let is_conversion = self.board[from]
+                    .0
+                    .map_or(false, |p| p.kind == PieceKind::Diplomat);
+                if is_conversion {
+                    self.board[to].0.as_mut().unwrap().team = *turn;
+                } else {
+                    self.board[to] = self.board[from];
+                }
+                self.board[from].0 = None;
+                *power -= 1;
+            }
             Move::Merge { dest, blanks } => todo!(),
         }
+        if *power <= 0 {
+            turn.flip();
+        }
+        Ok(())
     }
+}
+
+#[test]
+fn test_diplomat() {
+    let mut game = Game::new();
+    game.board[Pos(30)] = Tile(Some(Piece {
+        team: Team::Blue,
+        kind: PieceKind::Diplomat,
+    }));
+    game.board[Pos(21)] = Tile(Some(Piece {
+        team: Team::Red,
+        kind: PieceKind::Warrior,
+    }));
+    println!("{game}");
+    game.make_move(&Move::Move {
+        from: Pos(30),
+        to: Pos(21),
+    })
+    .unwrap();
+    println!("{game}");
+}
+
+#[test]
+fn test_reverse_move() {
+    let mut game = Game {
+        state: GameState::Ongoing {
+            turn: Team::Red,
+            power: 4,
+        },
+        board: "
+            w.........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+        "
+        .parse()
+        .unwrap(),
+    };
+    println!("{game}");
+    game.make_move(&Move::Move {
+        from: Pos(00),
+        to: Pos(10),
+    })
+    .unwrap_err();
+    println!("{game}");
+}
+
+#[test]
+fn test_recall() {
+    let mut game = Game {
+        state: GameState::Ongoing {
+            turn: Team::Red,
+            power: 4,
+        },
+        board: "
+            w.........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+        "
+        .parse()
+        .unwrap(),
+    };
+    println!("{game}");
+    game.make_move(&Move::Move {
+        from: Pos(00),
+        to: Pos(90),
+    })
+    .unwrap();
+    println!("{game}");
 }
 
 impl Display for Game {

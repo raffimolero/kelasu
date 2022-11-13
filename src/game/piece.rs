@@ -12,12 +12,22 @@ pub enum Team {
     Red,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Team {
+    pub fn flip(&mut self) {
+        *self = match self {
+            Team::Blue => Team::Red,
+            Team::Red => Team::Blue,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
     MoveOnly,
     CaptureOnly,
     MoveCapture,
     MoveMoveCapture,
+    Recall,
     Convert,
 }
 
@@ -53,7 +63,7 @@ impl PieceKind {
                 (CaptureOnly, 1),
                 (MoveCapture, 1),
                 (MoveOnly, 0),
-                (MoveOnly, 0),
+                (Recall, 9),
             ],
             Runner => [
                 (MoveOnly, 0),
