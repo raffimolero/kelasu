@@ -1,3 +1,5 @@
+use crate::util::input;
+
 use super::types::{Board, Team};
 use std::{fmt::Display, str::FromStr};
 
@@ -39,7 +41,9 @@ impl FromStr for Move {
             "move" => {
                 let from = next_token("Please specify which position to come from, as an xy coordinate from 00 to 99.")
                     .and_then(get_pos)?;
-                next_token("Syntax: from xy to xy")?;
+                if next_token("Syntax: from xy to xy")? != "to" {
+                    return Err(InvalidMove::InvalidParameter("Syntax: from xy to xy"));
+                }
                 let to = next_token(
                     "Please specify which position to go to, as an xy coordinate from 00 to 99.",
                 )
@@ -65,6 +69,19 @@ impl Game {
             remaining_stone_power: 4,
             board: Board::new(),
         }
+    }
+
+    pub fn get_move(&self) -> Result<Move, InvalidMove> {
+        let p_move = input("Input a move.").parse::<Move>()?;
+        /*
+        TODO:
+        check bounds - ok
+        check if piece exists
+        check if move is valid for piece
+            check if path is not blocked
+            check if not moving towards allies
+        */
+        todo!()
     }
 
     pub fn verify_move(&self, p_move: Move) -> Result<(), InvalidMove> {
