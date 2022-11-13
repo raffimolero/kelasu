@@ -1,5 +1,3 @@
-use std::num::NonZeroU8;
-
 /// a single-character "icon" that an object can have
 pub trait Icon {
     fn icon(&self) -> char;
@@ -13,8 +11,8 @@ pub enum Team {
 }
 
 impl Team {
-    pub fn flip(&mut self) {
-        *self = match self {
+    pub fn flip(self) -> Self {
+        match self {
             Team::Blue => Team::Red,
             Team::Red => Team::Blue,
         }

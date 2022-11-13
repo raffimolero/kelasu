@@ -117,6 +117,7 @@ impl Display for Board {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Move {
+    Resign,
     Move { from: Pos, to: Pos },
     Merge { dest: Pos, blanks: Vec<Pos> },
 }
@@ -152,6 +153,7 @@ impl FromStr for Move {
             t.parse::<i8>().map(Pos).map_err(|_| INVALID_POS)
         };
         match next_token("Valid moves:\n\tmove yx to yx\n\tmerge yx with yx yx ...")? {
+            "resign" => Ok(Self::Resign),
             "move" => {
                 let from = next_token("Please specify which position to come from, as an yx coordinate from 00 to 99.")
                     .and_then(get_pos)?;
@@ -281,6 +283,7 @@ impl Game {
             return Err(InvalidMove::GameOver);
         };
         match p_move {
+            Move::Resign => Ok(()),
             &Move::Move { from, to } => Self::verify_piece_move(&self.board, turn, from, to),
             Move::Merge { dest, blanks } => todo!(),
         }
@@ -293,6 +296,10 @@ impl Game {
             unreachable!()
         };
         match p_move {
+            Move::Resign => {
+                self.state = GameState::Win(turn.flip());
+                return Ok(());
+            }
             &Move::Move { from, to } => {
                 let is_conversion = self.board[from]
                     .0
@@ -318,21 +325,36 @@ impl Game {
             return Ok(());
         }
 
+        let enemy_piece_count = self
+            .board
+            .tiles
+            .iter()
+            .filter(|t| t.0.map_or(false, |p| p.team != *turn))
+            .count() as i8;
+        if enemy_piece_count == 0 {
+            self.state = GameState::Win(*turn);
+            return Ok(());
+        }
+
+        let enemy_stone = Piece {
+            team: turn.flip(),
+            kind: PieceKind::Stone,
+        };
+        let enemy_stone_count = self
+            .board
+            .tiles
+            .iter()
+            .filter(|t| t.0.map_or(false, |p| p == enemy_stone))
+            .count() as i8;
+
+        if enemy_stone_count == 0 {
+            self.state = GameState::Win(*turn);
+            return Ok(());
+        }
+
         if *power <= 0 {
-            turn.flip();
-            *power = self
-                .board
-                .tiles
-                .iter()
-                .filter(|t| {
-                    t.0.map_or(false, |p| {
-                        p == Piece {
-                            team: *turn,
-                            kind: PieceKind::Stone,
-                        }
-                    })
-                })
-                .count() as i8;
+            *turn = turn.flip();
+            *power = enemy_stone_count;
         }
         Ok(())
     }
