@@ -1,11 +1,7 @@
 use super::types::{Board, Team};
 use std::{fmt::Display, str::FromStr};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pos {
-    x: usize,
-    y: usize,
-}
+pub type Pos = u8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Move {
@@ -14,8 +10,9 @@ pub enum Move {
 
 #[derive(Debug)]
 pub enum InvalidMove {
-    EmptyMove,
     UnknownMove(String),
+    MissingParameter(&'static str),
+    InvalidParameter(&'static str),
     TileOutOfBounds,
     InvalidPieceMove,
 }
@@ -25,9 +22,31 @@ impl FromStr for Move {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut tokens = s.trim().split_whitespace();
-        match tokens.next() {
-            Some(cmd) => Err(InvalidMove::UnknownMove(cmd.to_owned())),
-            None => Err(InvalidMove::EmptyMove),
+        let mut next_token = |on_missing| {
+            tokens
+                .next()
+                .ok_or(InvalidMove::MissingParameter(on_missing))
+        };
+        let get_pos = |t: &str| {
+            const INVALID_POS: InvalidMove =
+                InvalidMove::InvalidParameter("Positions must be xy coordinates from 00 to 99.");
+            if t.len() != 2 {
+                return Err(INVALID_POS);
+            }
+            t.parse::<Pos>().map_err(|_| INVALID_POS)
+        };
+        match next_token("Valid moves:\n\tmove xy to xy\n\tmerge xy with xy xy ...")? {
+            "move" => {
+                let from = next_token("Please specify which position to come from, as an xy coordinate from 00 to 99.")
+                    .and_then(get_pos)?;
+                next_token("Syntax: from xy to xy")?;
+                let to = next_token(
+                    "Please specify which position to go to, as an xy coordinate from 00 to 99.",
+                )
+                .and_then(get_pos)?;
+                Ok(Self::Move { from, to })
+            }
+            cmd => Err(InvalidMove::UnknownMove(cmd.to_owned())),
         }
     }
 }
