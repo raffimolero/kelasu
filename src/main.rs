@@ -1,6 +1,6 @@
 mod game;
 
-use crate::game::types::Board;
+use crate::game::Board;
 
 fn main() {
     let board = Board::new();
