@@ -1,5 +1,5 @@
 use super::piece::{Icon, MoveKind, Piece, PieceKind, Team, Tile};
-use crate::util::input;
+use crate::util::{input, is_polyomino};
 use std::{
     fmt::Display,
     ops::{Index, IndexMut},
@@ -142,7 +142,19 @@ impl Display for Board {
 pub enum Move {
     Resign,
     Move { from: Pos, to: Pos },
-    Merge { dest: Pos, blanks: Vec<Pos> },
+    Merge { pieces: Vec<Pos> },
+}
+
+impl Move {
+    pub const MERGE_KINDS: [PieceKind; 6] = [
+        PieceKind::Warrior,
+        PieceKind::Runner,
+        PieceKind::Diplomat,
+        PieceKind::Champion,
+        PieceKind::General,
+        PieceKind::Stone, // it must be done
+    ];
+    pub const MERGE_COSTS: [usize; 6] = [2, 4, 4, 5, 10, 21];
 }
 
 /// just a way to encode trustedness in the type system
@@ -150,56 +162,112 @@ pub enum Move {
 pub struct VerifiedMove(Move);
 
 #[derive(Debug)]
-pub enum InvalidMove {
-    Cancelled,
-    UnknownMove,
-    MissingParameter(&'static str),
-    InvalidParameter(&'static str),
+pub enum IllegalMove {
     GameOver,
     EmptyTile,
     NotYourPiece,
     FriendlyFire,
     InvalidPieceMove(&'static str),
+    // TODO: thiserror, expected exactly {0} other blanks after the first.
+    InvalidMergeCount,
+    InvalidMergeKind,
+    DisconnectedMerges,
+    HomeMerge,
+}
+
+#[derive(Debug)]
+pub enum InvalidMoveCommand {
+    Cancelled,
+    UnknownMove,
+    Illegal(IllegalMove),
+    MissingParameter(&'static str),
+    InvalidParameter(&'static str),
+    // TODO: replace with thiserror
+    InvalidPosition(&'static str),
 }
 
 impl FromStr for Move {
-    type Err = InvalidMove;
+    type Err = InvalidMoveCommand;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut tokens = s.trim().split_whitespace();
+        let clean_str = s.trim().to_ascii_lowercase();
+        let mut tokens = clean_str.split_whitespace();
         let mut next_token = |on_missing| {
             tokens
                 .next()
-                .ok_or(InvalidMove::MissingParameter(on_missing))
+                .ok_or(InvalidMoveCommand::MissingParameter(on_missing))
         };
+
         let get_pos = |t: &str| {
-            const INVALID_POS: InvalidMove =
-                InvalidMove::InvalidParameter("Positions must be yx coordinates from 00 to 99.");
+            const INVALID_POS: InvalidMoveCommand = InvalidMoveCommand::InvalidPosition(
+                "Positions must be <yx> coordinates from 00 to 99.",
+            );
             if t.len() != 2 {
                 return Err(INVALID_POS);
             }
             t.parse::<i8>().map(Pos).map_err(|_| INVALID_POS)
         };
+
         match next_token("you can type `help`")? {
             "help" => {
-                println!("Valid moves:\n\tmove yx to yx\n\tmerge yx with yx yx ...");
-                Err(InvalidMove::Cancelled)
+                println!(
+                    "Valid moves:\n\tmove <yx> to <yx>\n\tmerge <piece> at <yx> with <yx> <yx> ..."
+                );
+                Err(InvalidMoveCommand::Cancelled)
             }
             "resign" | "exit" | "quit" => Ok(Self::Resign),
             "move" => {
-                let from = next_token("Please specify which position to come from, as an yx coordinate from 00 to 99.")
-                    .and_then(get_pos)?;
-                if next_token("Syntax: move yx to yx")? != "to" {
-                    return Err(InvalidMove::InvalidParameter("Syntax: move yx to yx"));
+                let from = next_token("From where?").and_then(get_pos)?;
+                if next_token("To where?")? != "to" {
+                    return Err(InvalidMoveCommand::InvalidParameter(
+                        "Syntax: move <yx> to <yx>",
+                    ));
                 }
-                let to = next_token(
-                    "Please specify which position to go to, as an yx coordinate from 00 to 99.",
-                )
-                .and_then(get_pos)?;
+                let to = next_token("Where to?").and_then(get_pos)?;
                 Ok(Self::Move { from, to })
             }
-            "merge" => todo!(),
-            cmd => Err(InvalidMove::UnknownMove),
+            "merge" => {
+                let (piece, cost) = next_token("What do you want to merge into?")?
+                    .parse::<PieceKind>()
+                    .map_err(|_| {
+                        InvalidMoveCommand::InvalidParameter(
+                            "Specify what kind of piece you want to merge into.",
+                        )
+                    })
+                    .and_then(|k| {
+                        k.merge_costs()
+                            .map(|v| (k, v))
+                            .ok_or(InvalidMoveCommand::Illegal(IllegalMove::InvalidMergeKind))
+                    })?;
+
+                if next_token("At where?")? != "at" {
+                    return Err(InvalidMoveCommand::InvalidParameter(
+                        "Syntax: merge <piece> at <yx> with <yx> <yx> ...",
+                    ));
+                }
+
+                let dest = next_token("At where?").and_then(get_pos)?;
+
+                if next_token("With which other pieces?")? != "with" {
+                    return Err(InvalidMoveCommand::InvalidParameter(
+                        "Syntax: merge <piece> at <yx> with <yx> <yx> ...",
+                    ));
+                }
+
+                let blank_ct = cost - 1;
+                let mut pieces = (tokens)
+                    .take(blank_ct + 1)
+                    .map(get_pos)
+                    .collect::<Result<Vec<Pos>, InvalidMoveCommand>>()?;
+
+                if pieces.len() != blank_ct {
+                    return Err(InvalidMoveCommand::Illegal(IllegalMove::InvalidMergeCount));
+                }
+
+                pieces.push(dest);
+                Ok(Self::Merge { pieces })
+            }
+            _ => Err(InvalidMoveCommand::UnknownMove),
         }
     }
 }
@@ -247,9 +315,10 @@ impl Game {
         matches!(self.state, GameState::Ongoing { .. })
     }
 
-    pub fn get_move(&self) -> Result<VerifiedMove, InvalidMove> {
+    pub fn get_move(&self) -> Result<VerifiedMove, InvalidMoveCommand> {
         let p_move = input("Input a move.").parse::<Move>()?;
         self.verify_move(p_move)
+            .map_err(InvalidMoveCommand::Illegal)
     }
 
     pub fn verify_piece_move(
@@ -257,22 +326,18 @@ impl Game {
         turn: Team,
         from: Pos,
         to: Pos,
-    ) -> Result<(), InvalidMove> {
+    ) -> Result<(), IllegalMove> {
         // we don't have to check for power because it should immediately switch turns then
 
         let Tile(Some(piece)) = board[from] else {
-            return Err(InvalidMove::EmptyTile);
+            return Err(IllegalMove::EmptyTile);
         };
 
         if piece.team != turn {
-            return Err(InvalidMove::NotYourPiece);
+            return Err(IllegalMove::NotYourPiece);
         }
 
-        if board[to].0.map_or(false, |t| t.team == turn) {
-            return Err(InvalidMove::FriendlyFire);
-        }
-
-        let ([dx, dy], dist) = from.dir_to(to).ok_or(InvalidMove::InvalidPieceMove(
+        let ([dx, dy], dist) = from.dir_to(to).ok_or(IllegalMove::InvalidPieceMove(
             "Moves must be in one of 8 directions.",
         ))?;
 
@@ -280,7 +345,7 @@ impl Game {
         let moves = piece.moves();
         let (move_kind, range) = moves[ray_index];
         if range < dist {
-            return Err(InvalidMove::InvalidPieceMove(
+            return Err(IllegalMove::InvalidPieceMove(
                 "The destination cannot be reached by that piece.",
             ));
         }
@@ -292,43 +357,62 @@ impl Game {
                     .shift(dx, dy)
                     .expect("from and to are guaranteed to be within bounds.");
                 if board[temp].0.is_some() {
-                    return Err(InvalidMove::InvalidPieceMove(
+                    return Err(IllegalMove::InvalidPieceMove(
                         "There is another piece in the way.",
                     ));
                 }
             }
         }
 
+        if board[to].0.map_or(false, |t| t.team == turn) {
+            return Err(IllegalMove::FriendlyFire);
+        }
+
         match move_kind {
-            MoveKind::MoveOnly if board[to].0.is_some() => Err(InvalidMove::InvalidPieceMove(
+            MoveKind::MoveOnly if board[to].0.is_some() => Err(IllegalMove::InvalidPieceMove(
                 "There is another piece in the way.",
             )),
             MoveKind::CaptureOnly | MoveKind::Convert if board[to].0.is_none() => {
-                Err(InvalidMove::InvalidPieceMove(
+                Err(IllegalMove::InvalidPieceMove(
                     "That piece must capture something in that direction.",
                 ))
             }
             MoveKind::MoveMoveCapture if dist == 1 && board[to].0.is_some() => Err(
-                InvalidMove::InvalidPieceMove("Runners cannot capture within a range of 1."),
+                IllegalMove::InvalidPieceMove("Runners cannot capture within a range of 1."),
             ),
-            MoveKind::Recall if dist < range => Err(InvalidMove::InvalidPieceMove(
+            MoveKind::Recall if dist < range => Err(IllegalMove::InvalidPieceMove(
                 "Warriors can only return if they are on the opposite row.",
             )),
             _ => Ok(()),
         }
     }
 
-    pub fn verify_move(&self, p_move: Move) -> Result<VerifiedMove, InvalidMove> {
-        let GameState::Ongoing { turn, power: _ } = self.state else {
-            return Err(InvalidMove::GameOver);
+    pub fn verify_merge(board: &Board, turn: Team, pieces: &[Pos]) -> Result<(), IllegalMove> {
+        let home_rows = match turn {
+            Team::Blue => 00..20,
+            Team::Red => 90..100,
         };
-        match p_move {
-            Move::Resign => Ok(VerifiedMove(Move::Resign)),
-            Move::Move { from, to } => {
-                Self::verify_piece_move(&self.board, turn, from, to).map(|_| VerifiedMove(p_move))
-            }
-            Move::Merge { dest, blanks } => todo!(),
+        if pieces.iter().any(|p| home_rows.contains(&p.0)) {
+            return Err(IllegalMove::HomeMerge);
         }
+
+        if !is_polyomino(pieces) {
+            return Err(IllegalMove::DisconnectedMerges);
+        }
+
+        Ok(())
+    }
+
+    pub fn verify_move(&self, p_move: Move) -> Result<VerifiedMove, IllegalMove> {
+        let GameState::Ongoing { turn, power: _ } = self.state else {
+            return Err(IllegalMove::GameOver);
+        };
+        match &p_move {
+            Move::Resign => Ok(()),
+            Move::Move { from, to } => Self::verify_piece_move(&self.board, turn, *from, *to),
+            Move::Merge { pieces } => Self::verify_merge(&self.board, turn, &pieces),
+        }
+        .map(|_| VerifiedMove(p_move))
     }
 
     pub fn make_move(&mut self, p_move: VerifiedMove) {
@@ -352,7 +436,7 @@ impl Game {
                 self.board[from].0 = None;
                 *power -= 1;
             }
-            Move::Merge { dest, blanks } => todo!(),
+            Move::Merge { pieces } => todo!(),
         }
 
         // post-move checks

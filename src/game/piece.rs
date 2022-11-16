@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 /// a single-character "icon" that an object can have
 pub trait Icon {
     fn icon(&self) -> char;
@@ -31,24 +33,23 @@ pub enum MoveKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PieceKind {
-    Stone,
     Blank,
     Warrior,
     Runner,
     Diplomat,
     Champion,
     General,
+    Stone,
 }
 
 impl PieceKind {
     /// order: forward, fore-side, side, back-side, back.
     ///
     /// format: (kind, maxrange)
-    pub fn moves(&self) -> [(MoveKind, u8); 5] {
+    pub fn moves(self) -> [(MoveKind, u8); 5] {
         use MoveKind::*;
         use PieceKind::*;
         match self {
-            Stone => [(MoveOnly, 0); 5],
             Blank => [
                 (MoveOnly, 1),
                 (MoveOnly, 0),
@@ -85,7 +86,40 @@ impl PieceKind {
                 (MoveOnly, 10),
             ],
             General => [(MoveCapture, 10); 5],
+            Stone => [(MoveOnly, 0); 5],
         }
+    }
+
+    pub fn merge_costs(self) -> Option<usize> {
+        Some(match self {
+            PieceKind::Warrior => 2,
+            PieceKind::Runner => 4,
+            PieceKind::Diplomat => 4,
+            PieceKind::Champion => 5,
+            PieceKind::General => 10,
+            PieceKind::Stone => 21,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct UnknownPiece;
+
+impl FromStr for PieceKind {
+    type Err = UnknownPiece;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_ascii_lowercase().as_str() {
+            "blank" => Self::Blank,
+            "warrior" => Self::Warrior,
+            "runner" => Self::Runner,
+            "diplomat" => Self::Diplomat,
+            "champion" => Self::Champion,
+            "general" => Self::General,
+            "stone" => Self::Stone,
+            _ => return Err(UnknownPiece),
+        })
     }
 }
 

@@ -17,14 +17,14 @@ fn main() {
         };
 
         println!("Move: {p_move:?}");
-        if input("Confirm Move?")
-            .chars()
-            .next()
-            .map(|c| c.to_ascii_lowercase())
-            == Some('y')
-        {
-            game.make_move(p_move);
-        }
+        // if input("Confirm Move?")
+        //     .chars()
+        //     .next()
+        //     .map(|c| c.to_ascii_lowercase())
+        //     == Some('y')
+        // {
+        game.make_move(p_move);
+        // }
 
         println!("{game}");
     }
