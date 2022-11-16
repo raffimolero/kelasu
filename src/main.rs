@@ -13,6 +13,7 @@ fn main() {
 
         let Ok(p_move) = p_move else {
             println!("Move error: {p_move:?}");
+            println!("Valid moves:\n\tmove <yx> to <yx>\n\tmerge <piece> at <yx> with <yx> <yx> ...");
             continue;
         };
 

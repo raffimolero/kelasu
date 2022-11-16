@@ -18,7 +18,7 @@ impl Pos {
         let y2 = (rhs.0 / 10) as i8;
         let dx = x2 - x1;
         let dy = y2 - y1;
-        (dx == 0 || dy == 0 || dx.abs() == dy.abs())
+        ((dx & dy == 0) ^ (dx.abs() == dy.abs()))
             .then(|| ([dx.signum(), dy.signum()], dx.abs().max(dy.abs()) as u8))
     }
 
@@ -177,7 +177,7 @@ pub enum IllegalMove {
 
 #[derive(Debug)]
 pub enum InvalidMoveCommand {
-    Cancelled,
+    Help,
     UnknownMove,
     Illegal(IllegalMove),
     MissingParameter(&'static str),
@@ -209,12 +209,7 @@ impl FromStr for Move {
         };
 
         match next_token("you can type `help`")? {
-            "help" => {
-                println!(
-                    "Valid moves:\n\tmove <yx> to <yx>\n\tmerge <piece> at <yx> with <yx> <yx> ..."
-                );
-                Err(InvalidMoveCommand::Cancelled)
-            }
+            "help" => Err(InvalidMoveCommand::Help),
             "resign" | "exit" | "quit" => Ok(Self::Resign),
             "move" => {
                 let from = next_token("From where?").and_then(get_pos)?;
@@ -227,7 +222,7 @@ impl FromStr for Move {
                 Ok(Self::Move { from, to })
             }
             "merge" => {
-                let (piece, cost) = next_token("What do you want to merge into?")?
+                let cost = next_token("What do you want to merge into?")?
                     .parse::<PieceKind>()
                     .map_err(|_| {
                         InvalidMoveCommand::InvalidParameter(
@@ -236,7 +231,6 @@ impl FromStr for Move {
                     })
                     .and_then(|k| {
                         k.merge_costs()
-                            .map(|v| (k, v))
                             .ok_or(InvalidMoveCommand::Illegal(IllegalMove::InvalidMergeKind))
                     })?;
 
