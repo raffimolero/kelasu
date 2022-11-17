@@ -4,17 +4,18 @@ mod util;
 use crate::{game::Game, util::input};
 
 fn main() {
-    // HACK: changed Board::new() to be playable without merging
     let mut game = Game::new();
     println!("{game}");
 
     while game.is_ongoing() {
         let p_move = game.get_move();
 
-        let Ok(p_move) = p_move else {
-            println!("Move error: {p_move:?}");
-            println!("Valid moves:\n\tmove <yx> to <yx>\n\tmerge <piece> at <yx> with <yx> <yx> ...");
-            continue;
+        let p_move = match p_move {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Move error: {e}");
+                continue;
+            }
         };
 
         println!("Move: {p_move:?}");

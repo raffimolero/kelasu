@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use thiserror::Error;
+
 /// a single-character "icon" that an object can have
 pub trait Icon {
     fn icon(&self) -> char;
@@ -29,6 +31,26 @@ pub enum MoveKind {
     MoveMoveCapture,
     Recall,
     Convert,
+}
+
+#[derive(Error, Debug)]
+pub enum InvalidPieceMove {
+    #[error("Moves must be either orthogonal or diagonal.")]
+    NonCompassMove,
+    #[error("The piece can't move that far in that direction.")]
+    TooFar,
+    #[error("There is another piece in the way.")]
+    Blocked,
+    #[error("That piece must capture something in that direction.")]
+    MustCapture,
+    #[error("You cannot capture or move into your own pieces.")]
+    FriendlyFire,
+    #[error("Runners cannot capture within a range of 1.")]
+    RunnerNoMelee,
+    #[error("Warriors can only return if they are on the opposite row.")]
+    CannotRecallHere,
+    #[error("Only Blanks can merge together.")]
+    NonBlankMerge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -103,7 +125,8 @@ impl PieceKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
+#[error("I don't recognize that piece. Check for spelling issues.")]
 pub struct UnknownPiece;
 
 impl FromStr for PieceKind {
@@ -125,7 +148,7 @@ impl FromStr for PieceKind {
 
 impl Icon for PieceKind {
     fn icon(&self) -> char {
-        b"sbwrdcg"[*self as usize] as char
+        b"bwrdcgs"[*self as usize] as char
     }
 }
 
