@@ -194,7 +194,7 @@ impl Icon for Piece {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Tile(pub Option<Piece>);
 
 impl TryFrom<char> for Tile {

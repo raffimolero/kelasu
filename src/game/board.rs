@@ -1,6 +1,7 @@
 use super::piece::{Icon, InvalidPieceMove, MoveKind, Piece, PieceKind, Team, Tile};
 use crate::util::{input, verify_polyomino, NonPolyomino};
 use std::{
+    collections::HashMap,
     fmt::Display,
     ops::{Index, IndexMut},
     str::FromStr,
@@ -46,16 +47,16 @@ pub struct Board {
 impl Board {
     pub fn new() -> Self {
         "
-        BBBBBBBBBB
-        BBBBBBBBBB
-        S.S....S.S
-        ..........
-        ....::....
-        ....::....
-        ..........
-        s.s....s.s
-        bbbbbbbbbb
-        bbbbbbbbbb
+            BBBBBBBBBB
+            BBBBBBBBBB
+            S.S....S.S
+            ..........
+            ....::....
+            ....::....
+            ..........
+            s.s....s.s
+            bbbbbbbbbb
+            bbbbbbbbbb
         "
         .parse()
         .unwrap()
@@ -79,6 +80,14 @@ impl Board {
             .iter()
             .filter(|t| t.0.map_or(false, |p| p == stone))
             .count() as i8
+    }
+}
+
+impl Default for Board {
+    fn default() -> Self {
+        Self {
+            tiles: [Tile::default(); 100],
+        }
     }
 }
 
@@ -288,47 +297,51 @@ impl FromStr for Move {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameState {
-    Ongoing {
-        turn: Team,
-        power: i8,
-        stagnation: u8,
-        draw_offered: bool,
-    },
+    Ongoing { draw_offered: bool },
     Win(Team),
     Draw,
 }
 
 impl Display for GameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GameState::Ongoing { turn, power, .. } => {
-                writeln!(f, "{turn:?}'s turn.")?;
-                writeln!(f, "Remaining Stone Power: {power}.")
+        match *self {
+            GameState::Ongoing { draw_offered: true } => {
+                write!(f, "The opponent is offering a draw.")
             }
-            GameState::Win(team) => writeln!(f, "Winner: {team:?}."),
-            GameState::Draw => writeln!(f, "Draw."),
+            GameState::Ongoing {
+                draw_offered: false,
+            } => write!(f, "Ongoing match."),
+            GameState::Win(team) => write!(f, "Winner: {team:?}."),
+            GameState::Draw => write!(f, "Draw."),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug)]
 pub struct Game {
     state: GameState,
+    turn: Team,
+    power: i8,
     board: Board,
+    position_tracker: HashMap<(Team, Board), usize>,
+    stagnation: u8,
 }
 
 impl Game {
     pub fn new() -> Self {
-        let board = Board::new();
-        let turn = Team::Blue;
+        Self::from_position(Team::default(), Board::new())
+    }
+
+    pub fn from_position(turn: Team, board: Board) -> Self {
         Self {
             state: GameState::Ongoing {
-                turn,
-                power: board.stone_count(turn),
-                stagnation: 0,
                 draw_offered: false,
             },
+            turn,
+            power: board.stone_count(turn),
+            stagnation: 0,
             board,
+            position_tracker: HashMap::new(),
         }
     }
 
@@ -427,7 +440,7 @@ impl Game {
     }
 
     pub fn verify_move(&self, mut p_move: Move) -> Result<VerifiedMove, InvalidMove> {
-        let GameState::Ongoing { turn, draw_offered, .. } = self.state else {
+        let GameState::Ongoing { draw_offered, .. } = self.state else {
             return Err(InvalidMove::GameOver);
         };
         match &mut p_move {
@@ -435,28 +448,27 @@ impl Game {
             Move::DeclineDraw if draw_offered => Ok(()),
             Move::DeclineDraw => Err(InvalidMove::DrawNotOffered),
             _ if draw_offered => Err(InvalidMove::DrawOffered),
-            Move::Move { from, to } => Self::verify_piece_move(&self.board, turn, *from, *to),
-            Move::Merge { kind: _, pieces } => Self::verify_merge(&self.board, turn, pieces),
+            Move::Move { from, to } => Self::verify_piece_move(&self.board, self.turn, *from, *to),
+            Move::Merge { kind: _, pieces } => Self::verify_merge(&self.board, self.turn, pieces),
         }
         .map(|_| VerifiedMove(p_move))
     }
 
     pub fn make_move(&mut self, p_move: VerifiedMove) {
-        let GameState::Ongoing { turn, power, stagnation, draw_offered } = &mut self.state else {
+        let GameState::Ongoing { draw_offered } = &mut self.state else {
             panic!("make_move must only be called while the game is ongoing.");
         };
-        let opponent = !*turn;
 
         match p_move.0 {
             Move::Resign => {
-                self.state = GameState::Win(opponent);
+                self.state = GameState::Win(!self.turn);
                 return;
             }
             Move::Draw => {
                 if *draw_offered {
                     self.state = GameState::Draw;
                 } else {
-                    *turn = opponent;
+                    self.turn = !self.turn;
                     *draw_offered = true;
                 }
                 return;
@@ -464,28 +476,28 @@ impl Game {
             Move::DeclineDraw => {
                 if *draw_offered {
                     *draw_offered = false;
-                    *turn = opponent;
+                    self.turn = !self.turn;
                 }
                 return;
             }
             Move::Move { from, to } => {
-                *power -= 1;
+                self.power -= 1;
                 let kind = self.board[from].0.unwrap().kind;
                 if kind == PieceKind::Blank {
-                    *stagnation = 0;
+                    self.stagnation = 0;
                 }
                 // check if a diplomat made a diagonal move, i.e. when neither x nor y are 0
                 if kind == PieceKind::Diplomat && !from.dir_to(to).unwrap().0.contains(&0) {
                     // convert the piece
-                    self.board[to].0.as_mut().unwrap().team = *turn;
+                    self.board[to].0.as_mut().unwrap().team = self.turn;
                 } else {
                     self.board[to] = self.board[from];
                 }
                 self.board[from].0 = None;
             }
             Move::Merge { kind, mut pieces } => {
-                *stagnation = 0;
-                *power -= pieces.len() as i8;
+                self.stagnation = 0;
+                self.power -= pieces.len() as i8;
                 let dest = pieces.pop().unwrap();
                 for pos in pieces {
                     self.board[pos].0 = None;
@@ -495,49 +507,64 @@ impl Game {
             }
         }
 
-        // post-move checks
+        self.post_move_checks();
+    }
 
+    fn post_move_checks(&mut self) {
         let victory_by_occupation = [44, 45, 54, 55]
             .map(Pos)
             .into_iter()
-            .all(|pos| self.board[pos].0.map_or(false, |p| p.team == *turn));
+            .all(|pos| self.board[pos].0.map_or(false, |p| p.team == self.turn));
 
         if victory_by_occupation {
-            self.state = GameState::Win(*turn);
+            self.state = GameState::Win(self.turn);
             return;
         }
 
-        let enemy_piece_count = self.board.piece_count(opponent);
-        let enemy_stone_count = self.board.stone_count(opponent);
+        let enemy_piece_count = self.board.piece_count(!self.turn);
+        let enemy_stone_count = self.board.stone_count(!self.turn);
         let victory_by_domination = enemy_piece_count == 0 || enemy_stone_count == 0;
         if victory_by_domination {
-            self.state = GameState::Win(*turn);
+            self.state = GameState::Win(self.turn);
             return;
         }
 
-        if *power <= 0 {
-            *turn = opponent;
-            *power = enemy_stone_count;
-            if *turn == Team::Blue {
-                *stagnation += 1;
-                if *stagnation > 64 {
-                    self.state = GameState::Draw;
-                }
+        if self.power > 0 {
+            return;
+        }
+
+        self.turn = !self.turn;
+
+        let repetitions = self
+            .position_tracker
+            .entry((self.turn, self.board.clone()))
+            .or_default();
+        *repetitions += 1;
+        if *repetitions >= 4 {
+            self.state = GameState::Draw;
+        }
+
+        self.power = enemy_stone_count;
+        if self.turn == Team::Blue {
+            self.stagnation += 1;
+            if self.stagnation > 64 {
+                self.state = GameState::Draw;
             }
         }
     }
 }
 
+impl Default for Game {
+    fn default() -> Self {
+        Self::from_position(Team::default(), Board::default())
+    }
+}
+
 #[test]
 fn test_diplomat() {
-    let mut game = Game {
-        state: GameState::Ongoing {
-            turn: Team::Blue,
-            power: 4,
-            stagnation: 0,
-            draw_offered: false,
-        },
-        board: "
+    let mut game = Game::from_position(
+        Team::Blue,
+        "
             sS........
             ..........
             .w........
@@ -545,13 +572,13 @@ fn test_diplomat() {
             ..........
             ..........
             ..........
-            ....w..D..
+            ....W..d..
             ..........
             ..........
         "
         .parse()
         .unwrap(),
-    };
+    );
     game.make_move(
         game.verify_move(Move::Move {
             from: Pos(30),
@@ -562,16 +589,16 @@ fn test_diplomat() {
     assert_eq!(
         game.board,
         "
-        sS........
-        ..........
-        .W........
-        ..........
-        ..........
-        ..........
-        ..........
-        ....w..D..
-        ..........
-        ..........
+            sS........
+            ..........
+            .W........
+            ..........
+            ..........
+            ..........
+            ..........
+            ....W..d..
+            ..........
+            ..........
         "
         .parse()
         .unwrap()
@@ -591,16 +618,16 @@ fn test_diplomat() {
     assert_eq!(
         game.board,
         "
-        sS........
-        ..........
-        .W........
-        ..........
-        .......D..
-        ..........
-        ..........
-        ....w.....
-        ..........
-        ..........
+            sS........
+            ..........
+            .W........
+            ..........
+            .......d..
+            ..........
+            ..........
+            ....W.....
+            ..........
+            ..........
         "
         .parse()
         .unwrap()
@@ -609,14 +636,9 @@ fn test_diplomat() {
 
 #[test]
 fn test_reverse_move() {
-    let game = Game {
-        state: GameState::Ongoing {
-            turn: Team::Red,
-            power: 4,
-            stagnation: 0,
-            draw_offered: false,
-        },
-        board: "
+    let game = Game::from_position(
+        Team::Red,
+        "
             w.........
             ..........
             ..........
@@ -630,7 +652,7 @@ fn test_reverse_move() {
         "
         .parse()
         .unwrap(),
-    };
+    );
     game.verify_move(Move::Move {
         from: Pos(00),
         to: Pos(10),
@@ -640,14 +662,9 @@ fn test_reverse_move() {
 
 #[test]
 fn test_recall() {
-    let mut game = Game {
-        state: GameState::Ongoing {
-            turn: Team::Red,
-            power: 4,
-            stagnation: 0,
-            draw_offered: false,
-        },
-        board: "
+    let mut game = Game::from_position(
+        Team::Red,
+        "
             w.........
             ..........
             ..........
@@ -661,8 +678,7 @@ fn test_recall() {
         "
         .parse()
         .unwrap(),
-    };
-    println!("{game}");
+    );
     game.make_move(
         game.verify_move(Move::Move {
             from: Pos(00),
@@ -670,11 +686,93 @@ fn test_recall() {
         })
         .unwrap(),
     );
-    println!("{game}");
+    assert_eq!(
+        game.board,
+        "
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            w.........
+        "
+        .parse()
+        .unwrap(),
+    );
+}
+
+#[test]
+fn test_repetition() {
+    let mut game = Game::from_position(
+        Team::Blue,
+        "
+            W........S
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            ..........
+            w........s
+        "
+        .parse()
+        .unwrap(),
+    );
+    // go back and forth 3 times
+    for _ in 0..3 {
+        game.make_move(
+            game.verify_move(Move::Move {
+                from: Pos(00),
+                to: Pos(01),
+            })
+            .unwrap(),
+        );
+        game.make_move(
+            game.verify_move(Move::Move {
+                from: Pos(90),
+                to: Pos(91),
+            })
+            .unwrap(),
+        );
+
+        game.make_move(
+            game.verify_move(Move::Move {
+                from: Pos(01),
+                to: Pos(00),
+            })
+            .unwrap(),
+        );
+        game.make_move(
+            game.verify_move(Move::Move {
+                from: Pos(91),
+                to: Pos(90),
+            })
+            .unwrap(),
+        );
+    }
+    // go back one more time
+    game.make_move(
+        game.verify_move(Move::Move {
+            from: Pos(00),
+            to: Pos(01),
+        })
+        .unwrap(),
+    );
+    // draw
+    assert_eq!(game.state, GameState::Draw);
 }
 
 impl Display for Game {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}{}", self.state, self.board)
+        writeln!(f, "{}", self.state)?;
+        writeln!(f, "{:?}'s turn.", self.turn)?;
+        writeln!(f, "Remaining Stone Power: {}.", self.power)?;
+        writeln!(f, "{}", self.board)
     }
 }
