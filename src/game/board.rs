@@ -61,6 +61,15 @@ impl Board {
         .unwrap()
     }
 
+    pub fn piece_count(&self, team: Team) -> i8 {
+        self.tiles
+            .iter()
+            .filter(|t| {
+                t.0.map_or(false, |p| p.team == team && p.kind != PieceKind::Stone)
+            })
+            .count() as i8
+    }
+
     pub fn stone_count(&self, team: Team) -> i8 {
         let stone = Piece {
             team,
@@ -271,7 +280,11 @@ impl FromStr for Move {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameState {
-    Ongoing { turn: Team, power: i8 },
+    Ongoing {
+        turn: Team,
+        power: i8,
+        stagnation: u8,
+    },
     Win(Team),
     Draw,
 }
@@ -279,7 +292,7 @@ pub enum GameState {
 impl Display for GameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GameState::Ongoing { turn, power } => {
+            GameState::Ongoing { turn, power, .. } => {
                 writeln!(f, "{turn:?}'s turn.")?;
                 writeln!(f, "Remaining Stone Power: {power}.")
             }
@@ -303,6 +316,7 @@ impl Game {
             state: GameState::Ongoing {
                 turn,
                 power: board.stone_count(turn),
+                stagnation: 0,
             },
             board,
         }
@@ -403,7 +417,7 @@ impl Game {
     }
 
     pub fn verify_move(&self, mut p_move: Move) -> Result<VerifiedMove, InvalidMove> {
-        let GameState::Ongoing { turn, power: _ } = self.state else {
+        let GameState::Ongoing { turn, .. } = self.state else {
             return Err(InvalidMove::GameOver);
         };
         match &mut p_move {
@@ -415,20 +429,25 @@ impl Game {
     }
 
     pub fn make_move(&mut self, p_move: VerifiedMove) {
-        let GameState::Ongoing { turn, power } = &mut self.state else {
+        let GameState::Ongoing { turn, power, stagnation } = &mut self.state else {
             panic!("make_move must only be called while the game is ongoing.");
         };
+        let enemy_turn = !*turn;
+
         match p_move.0 {
             Move::Resign => {
-                self.state = GameState::Win(turn.flip());
+                self.state = GameState::Win(enemy_turn);
                 return;
             }
             Move::Move { from, to } => {
                 *power -= 1;
-                let is_conversion = self.board[from]
-                    .0
-                    .map_or(false, |p| p.kind == PieceKind::Diplomat);
-                if is_conversion {
+                let kind = self.board[from].0.unwrap().kind;
+                if kind == PieceKind::Blank {
+                    *stagnation = 0;
+                }
+                // check if a diplomat made a diagonal move, i.e. when neither x nor y are 0
+                if kind == PieceKind::Diplomat && !from.dir_to(to).unwrap().0.contains(&0) {
+                    // convert the piece
                     self.board[to].0.as_mut().unwrap().team = *turn;
                 } else {
                     self.board[to] = self.board[from];
@@ -436,6 +455,7 @@ impl Game {
                 self.board[from].0 = None;
             }
             Move::Merge { kind, mut pieces } => {
+                *stagnation = 0;
                 *power -= pieces.len() as i8;
                 let dest = pieces.pop().unwrap();
                 for pos in pieces {
@@ -455,42 +475,54 @@ impl Game {
             return;
         }
 
-        let enemy_piece_count = self
-            .board
-            .tiles
-            .iter()
-            .filter(|t| t.0.map_or(false, |p| p.team != *turn))
-            .count() as i8;
+        let enemy_piece_count = self.board.piece_count(enemy_turn);
         if enemy_piece_count == 0 {
             self.state = GameState::Win(*turn);
             return;
         }
 
-        let enemy_stone_count = self.board.stone_count(turn.flip());
+        let enemy_stone_count = self.board.stone_count(enemy_turn);
         if enemy_stone_count == 0 {
             self.state = GameState::Win(*turn);
             return;
         }
 
         if *power <= 0 {
-            *turn = turn.flip();
+            *turn = enemy_turn;
             *power = enemy_stone_count;
+            if *turn == Team::Blue {
+                *stagnation += 1;
+                if *stagnation > 64 {
+                    self.state = GameState::Draw;
+                }
+            }
         }
     }
 }
 
 #[test]
 fn test_diplomat() {
-    let mut game = Game::new();
-    game.board[Pos(30)] = Tile(Some(Piece {
-        team: Team::Blue,
-        kind: PieceKind::Diplomat,
-    }));
-    game.board[Pos(21)] = Tile(Some(Piece {
-        team: Team::Red,
-        kind: PieceKind::Warrior,
-    }));
-    println!("{game}");
+    let mut game = Game {
+        state: GameState::Ongoing {
+            turn: Team::Blue,
+            power: 4,
+            stagnation: 0,
+        },
+        board: "
+            sS........
+            ..........
+            .w........
+            D.........
+            ..........
+            ..........
+            ..........
+            ....w..D..
+            ..........
+            ..........
+        "
+        .parse()
+        .unwrap(),
+    };
     game.make_move(
         game.verify_move(Move::Move {
             from: Pos(30),
@@ -498,7 +530,52 @@ fn test_diplomat() {
         })
         .unwrap(),
     );
-    println!("{game}");
+    assert_eq!(
+        game.board,
+        "
+        sS........
+        ..........
+        .W........
+        ..........
+        ..........
+        ..........
+        ..........
+        ....w..D..
+        ..........
+        ..........
+        "
+        .parse()
+        .unwrap()
+    );
+    game.verify_move(Move::Move {
+        from: Pos(77),
+        to: Pos(74),
+    })
+    .unwrap_err();
+    game.make_move(
+        game.verify_move(Move::Move {
+            from: Pos(77),
+            to: Pos(47),
+        })
+        .unwrap(),
+    );
+    assert_eq!(
+        game.board,
+        "
+        sS........
+        ..........
+        .W........
+        ..........
+        .......D..
+        ..........
+        ..........
+        ....w.....
+        ..........
+        ..........
+        "
+        .parse()
+        .unwrap()
+    );
 }
 
 #[test]
@@ -507,6 +584,7 @@ fn test_reverse_move() {
         state: GameState::Ongoing {
             turn: Team::Red,
             power: 4,
+            stagnation: 0,
         },
         board: "
             w.........
@@ -523,13 +601,11 @@ fn test_reverse_move() {
         .parse()
         .unwrap(),
     };
-    println!("{game}");
     game.verify_move(Move::Move {
         from: Pos(00),
         to: Pos(10),
     })
     .unwrap_err();
-    println!("{game}");
 }
 
 #[test]
@@ -538,6 +614,7 @@ fn test_recall() {
         state: GameState::Ongoing {
             turn: Team::Red,
             power: 4,
+            stagnation: 0,
         },
         board: "
             w.........

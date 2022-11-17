@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{ops::Not, str::FromStr};
 
 use thiserror::Error;
 
@@ -14,8 +14,10 @@ pub enum Team {
     Red,
 }
 
-impl Team {
-    pub fn flip(self) -> Self {
+impl Not for Team {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
         match self {
             Team::Blue => Team::Red,
             Team::Red => Team::Blue,
