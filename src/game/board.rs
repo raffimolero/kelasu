@@ -141,6 +141,8 @@ impl Display for Board {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Move {
     Resign,
+    Draw,
+    DeclineDraw,
     Move {
         from: Pos,
         to: Pos,
@@ -160,6 +162,10 @@ pub struct VerifiedMove(Move);
 pub enum InvalidMove {
     #[error("You cannot move after the game is over.")]
     GameOver,
+    #[error("Did you just try to decline without first being offered a draw?")]
+    DrawNotOffered,
+    #[error("You must accept or decline the draw.")]
+    DrawOffered,
     #[error("You cannot move an empty tile.")]
     EmptyTile,
     #[error("You cannot move your opponent's pieces.")]
@@ -181,7 +187,7 @@ pub enum InvalidMove {
 
 #[derive(Error, Debug)]
 pub enum InvalidMoveSyntax {
-    #[error("The only valid moves are `move` and `merge`.")]
+    #[error("The only valid moves are `move`, `merge`, `resign`, and `draw`.")]
     UnknownMove,
     #[error("Expected another parameter: {0}")]
     MissingParameter(&'static str),
@@ -226,6 +232,8 @@ impl FromStr for Move {
 
         match next_token("What kind of move did you want to make?")? {
             "resign" | "exit" | "quit" => Ok(Self::Resign),
+            "draw" => Ok(Self::Draw),
+            "decline" => Ok(Self::DeclineDraw),
             "move" => {
                 let from = next_token("From where?").and_then(get_pos)?;
                 if next_token("To where?")? != "to" {
@@ -284,6 +292,7 @@ pub enum GameState {
         turn: Team,
         power: i8,
         stagnation: u8,
+        draw_offered: bool,
     },
     Win(Team),
     Draw,
@@ -317,6 +326,7 @@ impl Game {
                 turn,
                 power: board.stone_count(turn),
                 stagnation: 0,
+                draw_offered: false,
             },
             board,
         }
@@ -417,11 +427,14 @@ impl Game {
     }
 
     pub fn verify_move(&self, mut p_move: Move) -> Result<VerifiedMove, InvalidMove> {
-        let GameState::Ongoing { turn, .. } = self.state else {
+        let GameState::Ongoing { turn, draw_offered, .. } = self.state else {
             return Err(InvalidMove::GameOver);
         };
         match &mut p_move {
-            Move::Resign => Ok(()),
+            Move::Resign | Move::Draw => Ok(()),
+            Move::DeclineDraw if draw_offered => Ok(()),
+            Move::DeclineDraw => Err(InvalidMove::DrawNotOffered),
+            _ if draw_offered => Err(InvalidMove::DrawOffered),
             Move::Move { from, to } => Self::verify_piece_move(&self.board, turn, *from, *to),
             Move::Merge { kind: _, pieces } => Self::verify_merge(&self.board, turn, pieces),
         }
@@ -429,14 +442,30 @@ impl Game {
     }
 
     pub fn make_move(&mut self, p_move: VerifiedMove) {
-        let GameState::Ongoing { turn: us, power, stagnation } = &mut self.state else {
+        let GameState::Ongoing { turn, power, stagnation, draw_offered } = &mut self.state else {
             panic!("make_move must only be called while the game is ongoing.");
         };
-        let them = !*us;
+        let opponent = !*turn;
 
         match p_move.0 {
             Move::Resign => {
-                self.state = GameState::Win(them);
+                self.state = GameState::Win(opponent);
+                return;
+            }
+            Move::Draw => {
+                if *draw_offered {
+                    self.state = GameState::Draw;
+                } else {
+                    *turn = opponent;
+                    *draw_offered = true;
+                }
+                return;
+            }
+            Move::DeclineDraw => {
+                if *draw_offered {
+                    *draw_offered = false;
+                    *turn = opponent;
+                }
                 return;
             }
             Move::Move { from, to } => {
@@ -448,7 +477,7 @@ impl Game {
                 // check if a diplomat made a diagonal move, i.e. when neither x nor y are 0
                 if kind == PieceKind::Diplomat && !from.dir_to(to).unwrap().0.contains(&0) {
                     // convert the piece
-                    self.board[to].0.as_mut().unwrap().team = *us;
+                    self.board[to].0.as_mut().unwrap().team = *turn;
                 } else {
                     self.board[to] = self.board[from];
                 }
@@ -467,26 +496,29 @@ impl Game {
         }
 
         // post-move checks
+
         let victory_by_occupation = [44, 45, 54, 55]
             .map(Pos)
             .into_iter()
-            .all(|pos| self.board[pos].0.map_or(false, |p| p.team == *us));
+            .all(|pos| self.board[pos].0.map_or(false, |p| p.team == *turn));
+
         if victory_by_occupation {
-            self.state = GameState::Win(*us);
+            self.state = GameState::Win(*turn);
             return;
         }
 
-        let enemy_piece_count = self.board.piece_count(them);
-        let enemy_stone_count = self.board.stone_count(them);
-        if enemy_piece_count == 0 || enemy_stone_count == 0 {
-            self.state = GameState::Win(*us);
+        let enemy_piece_count = self.board.piece_count(opponent);
+        let enemy_stone_count = self.board.stone_count(opponent);
+        let victory_by_domination = enemy_piece_count == 0 || enemy_stone_count == 0;
+        if victory_by_domination {
+            self.state = GameState::Win(*turn);
             return;
         }
 
         if *power <= 0 {
-            *us = them;
+            *turn = opponent;
             *power = enemy_stone_count;
-            if *us == Team::Blue {
+            if *turn == Team::Blue {
                 *stagnation += 1;
                 if *stagnation > 64 {
                     self.state = GameState::Draw;
@@ -503,6 +535,7 @@ fn test_diplomat() {
             turn: Team::Blue,
             power: 4,
             stagnation: 0,
+            draw_offered: false,
         },
         board: "
             sS........
@@ -581,6 +614,7 @@ fn test_reverse_move() {
             turn: Team::Red,
             power: 4,
             stagnation: 0,
+            draw_offered: false,
         },
         board: "
             w.........
@@ -611,6 +645,7 @@ fn test_recall() {
             turn: Team::Red,
             power: 4,
             stagnation: 0,
+            draw_offered: false,
         },
         board: "
             w.........
