@@ -429,14 +429,14 @@ impl Game {
     }
 
     pub fn make_move(&mut self, p_move: VerifiedMove) {
-        let GameState::Ongoing { turn, power, stagnation } = &mut self.state else {
+        let GameState::Ongoing { turn: us, power, stagnation } = &mut self.state else {
             panic!("make_move must only be called while the game is ongoing.");
         };
-        let enemy_turn = !*turn;
+        let them = !*us;
 
         match p_move.0 {
             Move::Resign => {
-                self.state = GameState::Win(enemy_turn);
+                self.state = GameState::Win(them);
                 return;
             }
             Move::Move { from, to } => {
@@ -448,7 +448,7 @@ impl Game {
                 // check if a diplomat made a diagonal move, i.e. when neither x nor y are 0
                 if kind == PieceKind::Diplomat && !from.dir_to(to).unwrap().0.contains(&0) {
                     // convert the piece
-                    self.board[to].0.as_mut().unwrap().team = *turn;
+                    self.board[to].0.as_mut().unwrap().team = *us;
                 } else {
                     self.board[to] = self.board[from];
                 }
@@ -461,7 +461,8 @@ impl Game {
                 for pos in pieces {
                     self.board[pos].0 = None;
                 }
-                self.board[dest].0 = Some(Piece { team: *turn, kind });
+                // transform the piece
+                self.board[dest].0.as_mut().unwrap().kind = kind;
             }
         }
 
@@ -469,28 +470,23 @@ impl Game {
         let victory_by_occupation = [44, 45, 54, 55]
             .map(Pos)
             .into_iter()
-            .all(|pos| self.board[pos].0.map_or(false, |p| p.team == *turn));
+            .all(|pos| self.board[pos].0.map_or(false, |p| p.team == *us));
         if victory_by_occupation {
-            self.state = GameState::Win(*turn);
+            self.state = GameState::Win(*us);
             return;
         }
 
-        let enemy_piece_count = self.board.piece_count(enemy_turn);
-        if enemy_piece_count == 0 {
-            self.state = GameState::Win(*turn);
-            return;
-        }
-
-        let enemy_stone_count = self.board.stone_count(enemy_turn);
-        if enemy_stone_count == 0 {
-            self.state = GameState::Win(*turn);
+        let enemy_piece_count = self.board.piece_count(them);
+        let enemy_stone_count = self.board.stone_count(them);
+        if enemy_piece_count == 0 || enemy_stone_count == 0 {
+            self.state = GameState::Win(*us);
             return;
         }
 
         if *power <= 0 {
-            *turn = enemy_turn;
+            *us = them;
             *power = enemy_stone_count;
-            if *turn == Team::Blue {
+            if *us == Team::Blue {
                 *stagnation += 1;
                 if *stagnation > 64 {
                     self.state = GameState::Draw;
