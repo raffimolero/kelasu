@@ -163,6 +163,15 @@ pub enum Move {
     },
 }
 
+impl Move {
+    pub const SYNTAX: &'static str = "\
+        Valid moves:\n\
+          \tmove <yx> to <yx>\n\
+          \tmerge <piece> at <yx> with <yx> <yx> ...\n\
+          \tresign\n\
+          \tdraw";
+}
+
 /// just a way to encode trustedness in the type system
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedMove(Move);
@@ -206,12 +215,7 @@ pub enum InvalidMoveSyntax {
 
 #[derive(Error, Debug)]
 pub enum InvalidMoveCommand {
-    #[error(
-        "Invalid move syntax: {0}\n\
-        Valid moves:\n\
-        \tmove <yx> to <yx>\n\
-        \tmerge <piece> at <yx> with <yx> <yx> ..."
-    )]
+    #[error("Invalid move syntax: {0}\n{}", Move::SYNTAX)]
     InvalidSyntax(#[from] InvalidMoveSyntax),
     #[error("That move is illegal: {0}")]
     InvalidMove(#[from] InvalidMove),
@@ -349,12 +353,6 @@ impl Game {
         matches!(self.state, GameState::Ongoing { .. })
     }
 
-    pub fn get_move(&self) -> Result<VerifiedMove, InvalidMoveCommand> {
-        let p_move = input("Input a move.").parse::<Move>()?;
-        self.verify_move(p_move)
-            .map_err(InvalidMoveCommand::InvalidMove)
-    }
-
     pub fn verify_piece_move(
         board: &Board,
         turn: Team,
@@ -437,6 +435,11 @@ impl Game {
         verify_polyomino(pieces)?;
 
         Ok(())
+    }
+
+    pub fn verify_move_str(&self, input: &str) -> Result<VerifiedMove, InvalidMoveCommand> {
+        self.verify_move(input.parse()?)
+            .map_err(InvalidMoveCommand::from)
     }
 
     pub fn verify_move(&self, mut p_move: Move) -> Result<VerifiedMove, InvalidMove> {
@@ -773,6 +776,6 @@ impl Display for Game {
         writeln!(f, "{}", self.state)?;
         writeln!(f, "{:?}'s turn.", self.turn)?;
         writeln!(f, "Remaining Stone Power: {}.", self.power)?;
-        writeln!(f, "{}", self.board)
+        writeln!(f, "\n{}", self.board)
     }
 }

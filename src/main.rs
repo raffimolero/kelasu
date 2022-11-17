@@ -1,33 +1,46 @@
 mod game;
 mod util;
 
-use crate::{game::Game, util::input};
+use crate::{
+    game::{board::Move, Game},
+    util::input,
+};
 
 fn main() {
     let mut game = Game::new();
-    println!("{game}");
+    println!("Welcome to Kelasu.");
+    println!("{}", Move::SYNTAX);
+    input("Press Enter to begin the game.");
 
     while game.is_ongoing() {
-        let p_move = game.get_move();
+        println!("\n{game}");
 
+        let command = input("Input a move.");
+        if command == "help" {
+            println!("{}", Move::SYNTAX);
+            input("Press Enter to continue.");
+            continue;
+        }
+
+        let p_move = game.verify_move_str(&command);
         let p_move = match p_move {
             Ok(x) => x,
             Err(e) => {
                 println!("Move error: {e}");
+                input("Press Enter to continue.");
                 continue;
             }
         };
 
         println!("Move: {p_move:?}");
-        // if input("Confirm Move?")
-        //     .chars()
-        //     .next()
-        //     .map(|c| c.to_ascii_lowercase())
-        //     == Some('y')
-        // {
-        game.make_move(p_move);
-        // }
-
-        println!("{game}");
+        if input("Confirm Move?")
+            .chars()
+            .next()
+            .map(|c| c.to_ascii_lowercase())
+            == Some('y')
+        {
+            game.make_move(p_move);
+        }
     }
+    println!("{game}");
 }
