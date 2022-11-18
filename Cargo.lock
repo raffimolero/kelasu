@@ -581,6 +581,8 @@ dependencies = [
  "dotenv",
  "kelasu-game",
  "poise",
+ "rand",
+ "thiserror",
  "tokio",
 ]
 
