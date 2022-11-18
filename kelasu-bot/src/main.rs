@@ -248,18 +248,6 @@ async fn join(
     Ok(())
 }
 
-// /// Displays your or another user's account creation date
-// #[poise::command(slash_command, prefix_command)]
-// async fn age(
-//     ctx: Context<'_>,
-//     #[description = "Selected user"] user: Option<serenity::User>,
-// ) -> Result<(), Error> {
-//     let u = user.as_ref().unwrap_or_else(|| ctx.author());
-//     let response = format!("{}'s account was created at {}", u.name, u.created_at());
-//     ctx.say(response).await?;
-//     Ok(())
-// }
-
 #[poise::command(prefix_command)]
 async fn register(ctx: Context<'_>) -> Result<(), Error> {
     poise::builtins::register_application_commands_buttons(ctx).await?;
@@ -270,7 +258,7 @@ async fn register(ctx: Context<'_>) -> Result<(), Error> {
 async fn main() {
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![/* age(), */ host(), join(), lobbies(), register()],
+            commands: vec![host(), join(), lobbies(), register()],
             ..Default::default()
         })
         .token(dotenv::var("BOT_TOKEN").expect("missing DISCORD_TOKEN"))
