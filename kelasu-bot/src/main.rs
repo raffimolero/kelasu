@@ -12,6 +12,8 @@ pub type Context<'a> = poise::Context<'a, Lobbies, Error>;
 
 // User data, which is stored and accessible in all command invocations
 pub struct Lobbies {
+    // NOTE: this will be slower the more users there will be.
+    // not much of a concern if it's not popular, though :P
     lobbies: Mutex<HashMap<LobbyId, Lobby>>,
 }
 

@@ -12,7 +12,7 @@ pub type LobbyId = String;
 pub enum LobbyStatus {
     Waiting,
     Starting,
-    Ongoing(Game),
+    Ongoing,
 }
 
 impl LobbyStatus {
@@ -34,7 +34,7 @@ impl Display for LobbyStatus {
         match self {
             LobbyStatus::Waiting => write!(f, "Waiting for opponent..."),
             LobbyStatus::Starting => write!(f, "Starting game..."),
-            LobbyStatus::Ongoing(..) => write!(f, "Ongoing match..."),
+            LobbyStatus::Ongoing => write!(f, "Ongoing match..."),
         }
     }
 }
@@ -170,7 +170,10 @@ impl Lobby {
                 ),
             )
             .await?;
-        self.status = LobbyStatus::Ongoing(game);
+
+        self.status = LobbyStatus::Ongoing;
+        ctx.say(format!("Game over!\nResult: {}", game.start().await?))
+            .await?;
         Ok(())
     }
 }

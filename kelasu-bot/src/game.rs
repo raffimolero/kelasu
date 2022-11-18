@@ -1,5 +1,5 @@
-use kelasu_game::Game as BoardGame;
-use poise::serenity_prelude::UserId;
+use kelasu_game::{board::Winner, Game as BoardGame};
+use poise::serenity_prelude::{self as serenity, UserId};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TeamPreference {
@@ -22,5 +22,11 @@ impl Game {
             red,
             game: BoardGame::new(),
         }
+    }
+
+    /// returns Ok(Some(winner)), Ok(None) means a draw
+    pub async fn start(self) -> Result<Winner, serenity::Error> {
+        // TODO
+        Ok(Winner(None))
     }
 }

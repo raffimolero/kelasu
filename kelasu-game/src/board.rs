@@ -302,11 +302,22 @@ impl FromStr for Move {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Winner(pub Option<Team>);
+
+impl Display for Winner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(team) => write!(f, "Winner: {team:?}."),
+            None => write!(f, "Draw."),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameState {
     Ongoing { draw_offered: bool },
-    Win(Team),
-    Draw,
+    Finished(Winner),
 }
 
 impl Display for GameState {
@@ -318,8 +329,7 @@ impl Display for GameState {
             GameState::Ongoing {
                 draw_offered: false,
             } => write!(f, "Ongoing match."),
-            GameState::Win(team) => write!(f, "Winner: {team:?}."),
-            GameState::Draw => write!(f, "Draw."),
+            GameState::Finished(winner) => write!(f, "{winner}"),
         }
     }
 }
@@ -467,12 +477,12 @@ impl Game {
 
         match p_move.0 {
             Move::Resign => {
-                self.state = GameState::Win(!self.turn);
+                self.state = GameState::Finished(Winner(Some(!self.turn)));
                 return;
             }
             Move::Draw => {
                 if *draw_offered {
-                    self.state = GameState::Draw;
+                    self.state = GameState::Finished(Winner(None));
                 } else {
                     self.turn = !self.turn;
                     *draw_offered = true;
@@ -523,7 +533,7 @@ impl Game {
             .all(|pos| self.board[pos].0.map_or(false, |p| p.team == self.turn));
 
         if victory_by_occupation {
-            self.state = GameState::Win(self.turn);
+            self.state = GameState::Finished(Winner(Some(self.turn)));
             return;
         }
 
@@ -531,7 +541,7 @@ impl Game {
         let enemy_stone_count = self.board.stone_count(!self.turn);
         let victory_by_domination = enemy_piece_count == 0 || enemy_stone_count == 0;
         if victory_by_domination {
-            self.state = GameState::Win(self.turn);
+            self.state = GameState::Finished(Winner(Some(self.turn)));
             return;
         }
 
@@ -547,14 +557,14 @@ impl Game {
             .or_default();
         *repetitions += 1;
         if *repetitions >= 4 {
-            self.state = GameState::Draw;
+            self.state = GameState::Finished(Winner(None));
         }
 
         self.power = enemy_stone_count;
         if self.turn == Team::Blue {
             self.stagnation += 1;
             if self.stagnation > 64 {
-                self.state = GameState::Draw;
+                self.state = GameState::Finished(Winner(None));
             }
         }
     }
