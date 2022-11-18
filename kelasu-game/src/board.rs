@@ -316,7 +316,7 @@ impl Display for Winner {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameState {
-    Ongoing { draw_offered: bool },
+    Ongoing { draw_offered: bool }, // TODO: move draw_offered into Game
     Finished(Winner),
 }
 
@@ -336,10 +336,10 @@ impl Display for GameState {
 
 #[derive(Debug)]
 pub struct Game {
-    state: GameState,
-    turn: Team,
-    power: i8,
-    board: Board,
+    pub state: GameState,
+    pub turn: Team,
+    pub power: i8,
+    pub board: Board,
     position_tracker: HashMap<(Team, Board), usize>,
     stagnation: u8,
 }

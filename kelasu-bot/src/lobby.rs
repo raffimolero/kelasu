@@ -172,7 +172,7 @@ impl Lobby {
             .await?;
 
         self.status = LobbyStatus::Ongoing;
-        ctx.say(format!("Game over!\nResult: {}", game.start().await?))
+        ctx.say(format!("Game over!\nResult: {}", game.start(ctx).await?))
             .await?;
         Ok(())
     }

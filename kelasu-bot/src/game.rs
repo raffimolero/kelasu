@@ -1,5 +1,11 @@
-use kelasu_game::{board::Winner, Game as BoardGame};
+use kelasu_game::{
+    board::{GameState, Winner},
+    piece::Team,
+    Game as BoardGame,
+};
 use poise::serenity_prelude::{self as serenity, UserId};
+
+use crate::Context;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum TeamPreference {
@@ -25,8 +31,18 @@ impl Game {
     }
 
     /// returns Ok(Some(winner)), Ok(None) means a draw
-    pub async fn start(self) -> Result<Winner, serenity::Error> {
-        // TODO
-        Ok(Winner(None))
+    pub async fn start(self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
+        loop {
+            let user = match self.game.turn {
+                Team::Blue => self.blue,
+                Team::Red => self.red,
+            };
+            ctx.say(format!("It's <@{user}>'s turn.")).await?;
+
+            match self.game.state {
+                GameState::Ongoing { draw_offered } => todo!(),
+                GameState::Finished(winner) => return Ok(winner),
+            }
+        }
     }
 }
