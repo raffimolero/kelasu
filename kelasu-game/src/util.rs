@@ -1,4 +1,4 @@
-use crate::game::board::Pos;
+use crate::board::Pos;
 use std::io::{stdin, stdout, Write};
 
 use thiserror::Error;
