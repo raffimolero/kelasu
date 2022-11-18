@@ -12,7 +12,7 @@ struct Data {
     lobbies: Mutex<HashMap<LobbyId, Lobby>>,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum TeamPreference {
     Blue,
     Either,
@@ -36,16 +36,16 @@ impl Lobby {
         }
     }
 
-    async fn get_user_team(
+    /// asks both players which sides they prefer, at the same time
+    async fn get_user_teams(
         ctx: Context<'_>,
-        user_id: UserId,
-    ) -> Result<TeamPreference, serenity::Error> {
-        // ctx.discord().http.get_user(user_id.0).await?.;
+        player_ids: [UserId; 2],
+    ) -> Result<[TeamPreference; 2], serenity::Error> {
         let reply = ctx
             .send(|m| {
                 m.content(format!(
-                    "@{} Which side would you like to be on?",
-                    user_id.0
+                    "<@{}> <@{}>\nWhich sides would you like to be on?\n(No, the interaction did not fail. Your opponent is choosing their side as well.)",
+                    player_ids[0], player_ids[1]
                 ))
                 .components(|c| {
                     c.create_action_row(|r| {
@@ -57,7 +57,7 @@ impl Lobby {
                         .create_button(|b| {
                             b.custom_id("either")
                                 .label("Either")
-                                .style(serenity::ButtonStyle::Unknown)
+                                .style(serenity::ButtonStyle::Secondary)
                         })
                         .create_button(|b| {
                             b.custom_id("red")
@@ -69,49 +69,55 @@ impl Lobby {
             })
             .await?;
 
-        let interaction = reply
-            .message()
-            .await?
-            .await_component_interaction(ctx.discord())
-            .author_id(user_id)
-            .await;
+        let message = reply.message().await?;
 
-        reply.delete(ctx).await?;
-        let pressed_button_id = match &interaction {
-            Some(m) => &m.data.custom_id,
-            None => {
-                ctx.say("You didn't interact in time").await?;
-                return Ok(TeamPreference::Either);
+        let mut prefs = [None, None];
+        loop {
+            if let [Some(a), Some(b)] = prefs {
+                reply.delete(ctx).await?;
+                return Ok([a, b]);
             }
-        };
 
-        Ok(match &**pressed_button_id {
-            "blue" => TeamPreference::Blue,
-            "either" => TeamPreference::Either,
-            "red" => TeamPreference::Red,
-            other => {
-                eprintln!("Unknown button id: {other:?}");
-                TeamPreference::Either
-            }
-        })
+            let Some(interaction) = &message
+                .await_component_interaction(ctx.discord())
+                .filter(move |interaction| player_ids.contains(&interaction.user.id))
+                .await else {
+                    ctx.say("You didn't interact in time. Your preference has been set to 'Either'.").await?;
+                    for p in prefs.iter_mut().filter(|p| p.is_none()) {
+                        *p = Some(TeamPreference::Either)
+                    }
+                    continue;
+                };
+
+            let pref = match interaction.data.custom_id.as_str() {
+                "blue" => TeamPreference::Blue,
+                "either" => TeamPreference::Either,
+                "red" => TeamPreference::Red,
+                other => {
+                    eprintln!("Unknown button id: {other:?}");
+                    TeamPreference::Either
+                }
+            };
+            let this = (player_ids[1] == interaction.user.id) as usize;
+            prefs[this] = Some(pref);
+        }
     }
 
     async fn start(&mut self, ctx: Context<'_>) -> Result<(), serenity::Error> {
         use TeamPreference::*;
         let mut pair = [self.players[0], self.players[1]];
-        if match tokio::try_join!(
-            Self::get_user_team(ctx, pair[0]),
-            Self::get_user_team(ctx, pair[1]),
-        )? {
-            (Either, Either) | (Blue, Blue) | (Red, Red) => rand::random(),
-            (Red | Either, Blue | Either) => true,
-            (Blue | Either, Red | Either) => false,
+
+        if match Self::get_user_teams(ctx, pair).await? {
+            [Either, Either] | [Blue, Blue] | [Red, Red] => rand::random(),
+            [Red | Either, Blue | Either] => true,
+            [Blue | Either, Red | Either] => false,
         } {
             pair.swap(0, 1);
         }
+
         let game = Game::new(pair[0], pair[1]);
         ctx.say(format!(
-            "Game starting!\nBlue: @{},\nRed: @{}.",
+            "Game starting!\nBlue: <@{}>,\nRed: <@{}>.",
             game.blue, game.red,
         ))
         .await?;
@@ -222,7 +228,7 @@ async fn join(
         }
         lobby.players.push(player);
         lobby.start(ctx).await?;
-        "Successfully joined lobby."
+        "Good luck, have fun!"
     };
     ctx.say(response).await?;
     Ok(())
