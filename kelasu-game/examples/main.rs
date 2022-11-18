@@ -1,10 +1,4 @@
-mod game;
-mod util;
-
-use crate::{
-    game::{board::Move, Game},
-    util::input,
-};
+use kelasu_game::{board::Move, util::input, Game};
 
 fn main() {
     let mut game = Game::new();
