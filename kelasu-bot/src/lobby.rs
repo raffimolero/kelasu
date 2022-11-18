@@ -4,31 +4,77 @@ use crate::{
 };
 use std::fmt::Display;
 
-use poise::serenity_prelude::{self as serenity, ChannelId, UserId};
+use poise::serenity_prelude::{self as serenity, ChannelId, User, UserId};
 
 pub type LobbyId = String;
+
+#[derive(Debug)]
+pub enum LobbyStatus {
+    Waiting,
+    Starting,
+    Ongoing(Game),
+}
+
+impl LobbyStatus {
+    pub fn new() -> Self {
+        Self::Waiting
+    }
+
+    pub fn is_open(&self) -> bool {
+        matches!(self, LobbyStatus::Waiting)
+    }
+
+    pub fn is_closed(&self) -> bool {
+        !self.is_open()
+    }
+}
+
+impl Display for LobbyStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LobbyStatus::Waiting => write!(f, "Waiting for opponent..."),
+            LobbyStatus::Starting => write!(f, "Starting game..."),
+            LobbyStatus::Ongoing(..) => write!(f, "Ongoing match..."),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct UserInfo {
+    pub id: UserId,
+    pub name: String,
+}
+
+impl From<&User> for UserInfo {
+    fn from(u: &User) -> Self {
+        Self {
+            id: u.id,
+            name: u.name.clone(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Lobby {
     pub id: LobbyId,
     /// the first player is the host.
-    pub players: Vec<UserId>,
-    pub channel: ChannelId,
-    pub state: LobbyState,
+    pub players: Vec<UserInfo>,
+    pub channel: ChannelId, // RESOLVE: is this necessary?
+    pub status: LobbyStatus,
 }
 
 impl Lobby {
-    pub fn new(id: LobbyId, host: UserId, channel: ChannelId) -> Self {
+    pub fn new(id: LobbyId, host: UserInfo, channel: ChannelId) -> Self {
         Self {
             id,
             players: vec![host],
             channel,
-            state: LobbyState::new(),
+            status: LobbyStatus::new(),
         }
     }
 
     /// asks both players which sides they prefer.
-    async fn get_user_teams(
+    pub async fn get_user_teams(
         ctx: Context<'_>,
         players: [UserId; 2],
     ) -> Result<[TeamPreference; 2], serenity::Error> {
@@ -94,11 +140,15 @@ impl Lobby {
         }
     }
 
-    pub async fn start(&mut self, ctx: Context<'_>) -> Result<(), serenity::Error> {
+    pub async fn start(
+        &mut self,
+        ctx: Context<'_>,
+        teams: [TeamPreference; 2],
+    ) -> Result<(), serenity::Error> {
         use TeamPreference::*;
-        let mut pair = [self.players[0], self.players[1]];
+        let mut pair = [self.players[0].id, self.players[1].id];
 
-        if match Self::get_user_teams(ctx, pair).await? {
+        if match teams {
             [Either, Either] | [Blue, Blue] | [Red, Red] => rand::random(),
             [Red | Either, Blue | Either] => true,
             [Blue | Either, Red | Either] => false,
@@ -120,36 +170,7 @@ impl Lobby {
                 ),
             )
             .await?;
-        self.state = LobbyState::Ongoing(game);
+        self.status = LobbyStatus::Ongoing(game);
         Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub enum LobbyState {
-    Waiting,
-    Ongoing(Game),
-}
-
-impl LobbyState {
-    pub fn new() -> Self {
-        Self::Waiting
-    }
-
-    pub fn is_open(&self) -> bool {
-        matches!(self, LobbyState::Waiting)
-    }
-
-    pub fn is_closed(&self) -> bool {
-        !self.is_open()
-    }
-}
-
-impl Display for LobbyState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LobbyState::Waiting => write!(f, "Waiting for opponent..."),
-            LobbyState::Ongoing(..) => write!(f, "Ongoing match."),
-        }
     }
 }

@@ -1,6 +1,7 @@
 use crate::lobby::{Lobby, LobbyId};
 use std::collections::HashMap;
 
+use lobby::LobbyStatus;
 use poise::serenity_prelude::{self as serenity, Mutex};
 
 mod game;
@@ -25,14 +26,32 @@ impl Lobbies {
 /// lists all active lobbies.
 #[poise::command(slash_command, prefix_command)]
 async fn lobbies(ctx: Context<'_>) -> Result<(), Error> {
+    // get all lobbies
     let lobbies = ctx.data().lobbies.lock().await;
+
+    // check if empty
     if lobbies.is_empty() {
         ctx.say("There are no active lobbies...").await?;
         return Ok(());
     }
+
+    // list all active lobbies
     let mut response = "Active lobbies:".to_owned();
     for (k, v) in lobbies.iter() {
-        response.push_str(&format!("\nName: `{}` ({})", k, v.state));
+        // list lobby name
+        response.push_str(&format!("\nName: `{}`\n- Players: ", k,));
+
+        // Host, player, player, player
+        // homemade intersperse
+        let mut iter = v.players.iter().map(|p| p.name.as_str());
+        response.push_str(iter.next().unwrap_or("Hostless lobby???"));
+        for s in iter {
+            response.push_str(", ");
+            response.push_str(s);
+        }
+
+        // status
+        response.push_str(&format!("\n- Status: {}", v.status));
     }
     ctx.say(response).await?;
     Ok(())
@@ -50,7 +69,7 @@ async fn host(
     } else {
         lobbies.insert(
             name.clone(),
-            Lobby::new(name.clone(), ctx.author().id, ctx.channel_id()),
+            Lobby::new(name.clone(), ctx.author().into(), ctx.channel_id()),
         );
         format!("Created lobby: {name}")
     };
@@ -64,23 +83,41 @@ async fn join(
     ctx: Context<'_>,
     #[description = "The name of the lobby to join."] name: String,
 ) -> Result<(), Error> {
+    // try to pair up players
+    let pair = {
+        let mut lobbies = ctx.data().lobbies.lock().await;
+        let Some(lobby) = lobbies.get_mut(&name) else {
+            ctx.say("That lobby does not exist.").await?;
+            return Ok(());
+        };
+        let player = ctx.author();
+        if lobby.players.iter().any(|p| p.id == player.id) {
+            ctx.say("You cannot join the same lobby twice.").await?;
+            return Ok(());
+        }
+        if lobby.status.is_closed() {
+            ctx.say("That lobby is no longer accepting players.")
+                .await?;
+            return Ok(());
+        }
+        lobby.players.push(player.into());
+        lobby.status = LobbyStatus::Starting;
+        [lobby.players[0].id, lobby.players[1].id]
+    }; // release the lock
+
+    // ask both players their preferred teams
+    let teams = Lobby::get_user_teams(ctx, pair).await?;
+
+    // find the lobby again
     let mut lobbies = ctx.data().lobbies.lock().await;
-    let Some(lobby) = lobbies.get_mut(&name) else {
-        ctx.say("That lobby does not exist.").await?;
-        return Ok(());
-    };
-    let player = ctx.author().id;
-    if lobby.players.contains(&player) {
-        ctx.say("You cannot join the same lobby twice.").await?;
-        return Ok(());
-    }
-    if lobby.state.is_closed() {
-        ctx.say("That lobby is no longer accepting players.")
-            .await?;
-        return Ok(());
-    }
-    lobby.players.push(player);
-    lobby.start(ctx).await?;
+    let Some(lobby) = lobbies
+        .get_mut(&name) else {
+            ctx.say(format!("This lobby ({name:?}) somehow no longer exists...")).await?;
+            return Ok(())
+        };
+
+    // start
+    lobby.start(ctx, teams).await?;
     Ok(())
 }
 
@@ -97,7 +134,7 @@ async fn main() {
             commands: vec![host(), join(), lobbies(), register()],
             ..Default::default()
         })
-        .token(dotenv::var("BOT_TOKEN").expect("missing DISCORD_TOKEN"))
+        .token(dotenv::var("BOT_TOKEN").expect("missing BOT_TOKEN"))
         .intents(serenity::GatewayIntents::non_privileged())
         .user_data_setup(move |_ctx, _ready, _framework| {
             Box::pin(async move { Ok(Lobbies::new()) })
