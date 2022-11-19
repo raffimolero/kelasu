@@ -3,6 +3,7 @@ use crate::util::{verify_polyomino, NonPolyomino};
 use std::{
     collections::HashMap,
     fmt::Display,
+    num::ParseIntError,
     ops::{Index, IndexMut},
     str::FromStr,
 };
@@ -18,20 +19,41 @@ pub struct Pos(pub i8);
 impl Pos {
     /// returns one of the 8 possible directions. None if knightwise, for example.
     pub fn dir_to(self, rhs: Self) -> Option<([i8; 2], u8)> {
-        let x1 = (self.0 % 10) as i8;
-        let y1 = (self.0 / 10) as i8;
-        let x2 = (rhs.0 % 10) as i8;
-        let y2 = (rhs.0 / 10) as i8;
+        let [x1, y1] = self.xy();
+        let [x2, y2] = rhs.xy();
         let dx = x2 - x1;
         let dy = y2 - y1;
         ((dx == 0 || dy == 0) ^ (dx.abs() == dy.abs()))
             .then(|| ([dx.signum(), dy.signum()], dx.abs().max(dy.abs()) as u8))
     }
 
-    pub fn shift(mut self, dx: i8, dy: i8) -> Option<Self> {
-        let shift_amt = dy * 10 + dx;
-        self.0 += shift_amt;
-        (0..=99).contains(&self.0).then_some(self)
+    pub fn xy(self) -> [i8; 2] {
+        [self.0 % 10, self.0 / 10]
+    }
+
+    pub fn shift(self, dx: i8, dy: i8) -> Option<Self> {
+        let [mut x, mut y] = self.xy();
+        x += dx;
+        y += dy;
+        ((0..=9).contains(&x) && (0..=9).contains(&y)).then_some(Self(y * 10 + x))
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("Positions must be integers from 00 to 99.")]
+pub enum InvalidPos {
+    NaN(#[from] ParseIntError),
+    OutOfBounds,
+}
+
+impl FromStr for Pos {
+    type Err = InvalidPos;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let p = s.parse::<u8>()?;
+        (p < 100)
+            .then_some(Self(p as i8))
+            .ok_or(InvalidPos::OutOfBounds)
     }
 }
 
@@ -65,16 +87,16 @@ impl Board {
         .unwrap()
     }
 
-    pub fn piece_count(&self, team: Team) -> i8 {
+    pub fn piece_count(&self, team: Team) -> u8 {
         self.tiles
             .iter()
             .filter(|t| {
                 t.0.map_or(false, |p| p.team == team && p.kind != PieceKind::Stone)
             })
-            .count() as i8
+            .count() as u8
     }
 
-    pub fn stone_count(&self, team: Team) -> i8 {
+    pub fn stone_count(&self, team: Team) -> u8 {
         let stone = Piece {
             team,
             kind: PieceKind::Stone,
@@ -82,7 +104,7 @@ impl Board {
         self.tiles
             .iter()
             .filter(|t| t.0.map_or(false, |p| p == stone))
-            .count() as i8
+            .count() as u8
     }
 }
 
@@ -237,13 +259,11 @@ impl FromStr for Move {
         };
 
         let get_pos = |t: &str| {
-            const INVALID_POS: InvalidMoveSyntax = InvalidMoveSyntax::InvalidParameter(
-                "Positions must be <yx> coordinates from 00 to 99.",
-            );
-            if t.len() != 2 {
-                return Err(INVALID_POS);
-            }
-            t.parse::<i8>().map(Pos).map_err(|_| INVALID_POS)
+            t.parse::<Pos>().map_err(|_| {
+                InvalidMoveSyntax::InvalidParameter(
+                    "Positions must be <yx> coordinates from 00 to 99.",
+                )
+            })
         };
 
         match next_token("What kind of move did you want to make?")? {
@@ -302,11 +322,22 @@ impl FromStr for Move {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Winner(pub Option<Team>);
+
+impl Display for Winner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(team) => write!(f, "Winner: {team:?}."),
+            None => write!(f, "Draw."),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameState {
     Ongoing { draw_offered: bool },
-    Win(Team),
-    Draw,
+    Finished(Winner),
 }
 
 impl Display for GameState {
@@ -318,18 +349,17 @@ impl Display for GameState {
             GameState::Ongoing {
                 draw_offered: false,
             } => write!(f, "Ongoing match."),
-            GameState::Win(team) => write!(f, "Winner: {team:?}."),
-            GameState::Draw => write!(f, "Draw."),
+            GameState::Finished(winner) => write!(f, "{winner}"),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct Game {
-    state: GameState,
-    turn: Team,
-    power: i8,
-    board: Board,
+    pub state: GameState,
+    pub turn: Team,
+    pub power: u8,
+    pub board: Board,
     position_tracker: HashMap<(Team, Board), usize>,
     stagnation: u8,
 }
@@ -467,12 +497,12 @@ impl Game {
 
         match p_move.0 {
             Move::Resign => {
-                self.state = GameState::Win(!self.turn);
+                self.state = GameState::Finished(Winner(Some(!self.turn)));
                 return;
             }
             Move::Draw => {
                 if *draw_offered {
-                    self.state = GameState::Draw;
+                    self.state = GameState::Finished(Winner(None));
                 } else {
                     self.turn = !self.turn;
                     *draw_offered = true;
@@ -503,7 +533,7 @@ impl Game {
             }
             Move::Merge { kind, mut pieces } => {
                 self.stagnation = 0;
-                self.power -= pieces.len() as i8;
+                self.power = self.power.saturating_sub(pieces.len() as u8);
                 let dest = pieces.pop().unwrap();
                 for pos in pieces {
                     self.board[pos].0 = None;
@@ -523,7 +553,7 @@ impl Game {
             .all(|pos| self.board[pos].0.map_or(false, |p| p.team == self.turn));
 
         if victory_by_occupation {
-            self.state = GameState::Win(self.turn);
+            self.state = GameState::Finished(Winner(Some(self.turn)));
             return;
         }
 
@@ -531,7 +561,7 @@ impl Game {
         let enemy_stone_count = self.board.stone_count(!self.turn);
         let victory_by_domination = enemy_piece_count == 0 || enemy_stone_count == 0;
         if victory_by_domination {
-            self.state = GameState::Win(self.turn);
+            self.state = GameState::Finished(Winner(Some(self.turn)));
             return;
         }
 
@@ -547,14 +577,14 @@ impl Game {
             .or_default();
         *repetitions += 1;
         if *repetitions >= 4 {
-            self.state = GameState::Draw;
+            self.state = GameState::Finished(Winner(None));
         }
 
         self.power = enemy_stone_count;
         if self.turn == Team::Blue {
             self.stagnation += 1;
             if self.stagnation > 64 {
-                self.state = GameState::Draw;
+                self.state = GameState::Finished(Winner(None));
             }
         }
     }

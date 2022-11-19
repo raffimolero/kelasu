@@ -205,5 +205,5 @@ pub(crate) fn test_repetition() {
         .unwrap(),
     );
     // draw
-    assert_eq!(game.state, GameState::Draw);
+    assert_eq!(game.state, GameState::Finished(Winner(None)));
 }

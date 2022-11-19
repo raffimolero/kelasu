@@ -1,186 +1,25 @@
-use std::{collections::HashMap, fmt::Display};
+use crate::lobby::{Lobby, LobbyId};
+use std::collections::HashMap;
 
-use poise::serenity_prelude::{self as serenity, ChannelId, Mutex, UserId};
+use lobby::LobbyStatus;
+use poise::serenity_prelude::{self as serenity, Mutex};
 
-type LobbyId = String;
+mod game;
+mod lobby;
 
-type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::Context<'a, Data, Error>;
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Context<'a> = poise::Context<'a, Lobbies, Error>;
+
 // User data, which is stored and accessible in all command invocations
-struct Data {
-    numbers: Mutex<Vec<i32>>,
+pub struct Lobbies {
+    // NOTE: this will be slower the more users there will be.
+    // not much of a concern if it's not popular, though :P
     lobbies: Mutex<HashMap<LobbyId, Lobby>>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum TeamPreference {
-    Blue,
-    Either,
-    Red,
-}
-
-#[derive(Debug)]
-struct Lobby {
-    id: LobbyId,
-    /// the first player is the host.
-    players: Vec<UserId>,
-    channel: ChannelId,
-    state: LobbyState,
-}
-
-impl Lobby {
-    fn new(id: LobbyId, host: UserId, channel: ChannelId) -> Self {
-        Self {
-            id,
-            players: vec![host],
-            channel,
-            state: LobbyState::new(),
-        }
-    }
-
-    /// asks both players which sides they prefer.
-    async fn get_user_teams(
-        ctx: Context<'_>,
-        players: [UserId; 2],
-    ) -> Result<[TeamPreference; 2], serenity::Error> {
-        let reply = ctx
-            .send(|m| {
-                m.content(format!(
-                    "<@{}> <@{}>\nWhich sides would you like to be on?\n||You can change sides if the interaction 'fails', but don't worry, your previous preference is recorded until the game begins.||",
-                    players[0], players[1]
-                ))
-                .components(|c| {
-                    c.create_action_row(|r| {
-                        r.create_button(|b| {
-                            b.custom_id("blue")
-                                .label("Blue")
-                                .style(serenity::ButtonStyle::Primary)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("either")
-                                .label("Either")
-                                .style(serenity::ButtonStyle::Secondary)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("red")
-                                .label("Red")
-                                .style(serenity::ButtonStyle::Danger)
-                        })
-                    })
-                })
-            })
-            .await?;
-
-        let message = reply.message().await?;
-
-        let mut prefs = [None, None];
-        loop {
-            if let [Some(a), Some(b)] = prefs {
-                reply.delete(ctx).await?;
-                return Ok([a, b]);
-            }
-
-            let Some(interaction) = &message
-                .await_component_interaction(ctx.discord())
-                .filter(move |interaction| players.contains(&interaction.user.id))
-                .await else {
-                    ctx.say("You didn't interact in time. Your preference has been set to 'Either'.").await?;
-                    for p in prefs.iter_mut().filter(|p| p.is_none()) {
-                        *p = Some(TeamPreference::Either)
-                    }
-                    continue;
-                };
-
-            let pref = match interaction.data.custom_id.as_str() {
-                "blue" => TeamPreference::Blue,
-                "either" => TeamPreference::Either,
-                "red" => TeamPreference::Red,
-                other => {
-                    eprintln!("Unknown button id: {other:?}");
-                    TeamPreference::Either
-                }
-            };
-            let this = (players[1] == interaction.user.id) as usize;
-            prefs[this] = Some(pref);
-        }
-    }
-
-    async fn start(&mut self, ctx: Context<'_>) -> Result<(), serenity::Error> {
-        use TeamPreference::*;
-        let mut pair = [self.players[0], self.players[1]];
-
-        if match Self::get_user_teams(ctx, pair).await? {
-            [Either, Either] | [Blue, Blue] | [Red, Red] => rand::random(),
-            [Red | Either, Blue | Either] => true,
-            [Blue | Either, Red | Either] => false,
-        } {
-            pair.swap(0, 1);
-        }
-
-        let game = Game::new(pair[0], pair[1]);
-        ctx.channel_id()
-            .say(
-                &ctx.discord().http,
-                format!(
-                    "Game starting!\n\
-                    Lobby: {}\n\
-                    Blue: <@{}>,\n\
-                    Red: <@{}>.\n\
-                    Good luck, have fun!",
-                    self.id, game.blue, game.red,
-                ),
-            )
-            .await?;
-        self.state = LobbyState::Ongoing(game);
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct Game {
-    blue: UserId,
-    red: UserId,
-}
-
-impl Game {
-    fn new(blue: UserId, red: UserId) -> Self {
-        Self { blue, red }
-    }
-}
-
-#[derive(Debug)]
-enum LobbyState {
-    Waiting,
-    Ongoing(Game),
-}
-
-impl LobbyState {
-    fn new() -> Self {
-        Self::Waiting
-    }
-
-    fn is_open(&self) -> bool {
-        matches!(self, LobbyState::Waiting)
-    }
-
-    fn is_closed(&self) -> bool {
-        !self.is_open()
-    }
-}
-
-impl Display for LobbyState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LobbyState::Waiting => write!(f, "Waiting for opponent..."),
-            LobbyState::Ongoing(..) => write!(f, "Ongoing match."),
-        }
-    }
-}
-
-impl Data {
+impl Lobbies {
     fn new() -> Self {
         Self {
-            numbers: Mutex::from(vec![]),
             lobbies: Mutex::new(HashMap::new()),
         }
     }
@@ -189,14 +28,32 @@ impl Data {
 /// lists all active lobbies.
 #[poise::command(slash_command, prefix_command)]
 async fn lobbies(ctx: Context<'_>) -> Result<(), Error> {
+    // get all lobbies
     let lobbies = ctx.data().lobbies.lock().await;
+
+    // check if empty
     if lobbies.is_empty() {
         ctx.say("There are no active lobbies...").await?;
         return Ok(());
     }
+
+    // list all active lobbies
     let mut response = "Active lobbies:".to_owned();
     for (k, v) in lobbies.iter() {
-        response.push_str(&format!("\nName: `{}` ({})", k, v.state));
+        // list lobby name
+        response.push_str(&format!("\nName: `{}`\n- Players: ", k,));
+
+        // Host, player, player, player
+        // homemade intersperse
+        let mut iter = v.players.iter().map(|p| p.name.as_str());
+        response.push_str(iter.next().unwrap_or("Hostless lobby???"));
+        for s in iter {
+            response.push_str(", ");
+            response.push_str(s);
+        }
+
+        // status
+        response.push_str(&format!("\n- Status: {}", v.status));
     }
     ctx.say(response).await?;
     Ok(())
@@ -212,10 +69,7 @@ async fn host(
     let response = if lobbies.contains_key(&name) {
         "That lobby already exists.".to_owned()
     } else {
-        lobbies.insert(
-            name.clone(),
-            Lobby::new(name.clone(), ctx.author().id, ctx.channel_id()),
-        );
+        lobbies.insert(name.clone(), Lobby::new(name.clone(), ctx.author().into()));
         format!("Created lobby: {name}")
     };
     ctx.say(response).await?;
@@ -228,23 +82,50 @@ async fn join(
     ctx: Context<'_>,
     #[description = "The name of the lobby to join."] name: String,
 ) -> Result<(), Error> {
-    let mut lobbies = ctx.data().lobbies.lock().await;
-    let Some(lobby) = lobbies.get_mut(&name) else {
-        ctx.say("That lobby does not exist.").await?;
-        return Ok(());
+    // try to pair up players
+    let pair = {
+        let mut lobbies = ctx.data().lobbies.lock().await;
+        let Some(lobby) = lobbies.get_mut(&name) else {
+            ctx.say("That lobby does not exist.").await?;
+            return Ok(());
+        };
+        let player = ctx.author();
+        if lobby.players.iter().any(|p| p.id == player.id) {
+            ctx.say("You cannot join the same lobby twice.").await?;
+            return Ok(());
+        }
+        if lobby.status.is_closed() {
+            ctx.say("That lobby is no longer accepting players.")
+                .await?;
+            return Ok(());
+        }
+        lobby.players.push(player.into());
+        lobby.status = LobbyStatus::Starting;
+        [lobby.players[0].id, lobby.players[1].id]
+    }; // release the lock
+
+    // ask both players their preferred teams
+    let teams = Lobby::get_user_teams(ctx, pair).await?;
+
+    let game = {
+        // find the lobby again
+        let mut lobbies = ctx.data().lobbies.lock().await;
+        let Some(lobby) = lobbies
+        .get_mut(&name) else {
+            ctx.say(format!("This lobby ({name:?}) somehow no longer exists...")).await?;
+            return Ok(())
+        };
+
+        // start
+        lobby.start(ctx, teams).await?
     };
-    let player = ctx.author().id;
-    if lobby.players.contains(&player) {
-        ctx.say("You cannot join the same lobby twice.").await?;
-        return Ok(());
-    }
-    if lobby.state.is_closed() {
-        ctx.say("That lobby is no longer accepting players.")
-            .await?;
-        return Ok(());
-    }
-    lobby.players.push(player);
-    lobby.start(ctx).await?;
+
+    let result = game.start(ctx).await?;
+    ctx.say(format!("Game over!\nResult: {result}")).await?;
+
+    // delete the lobby
+    let mut lobbies = ctx.data().lobbies.lock().await;
+    lobbies.remove(&name);
     Ok(())
 }
 
@@ -261,9 +142,11 @@ async fn main() {
             commands: vec![host(), join(), lobbies(), register()],
             ..Default::default()
         })
-        .token(dotenv::var("BOT_TOKEN").expect("missing DISCORD_TOKEN"))
+        .token(dotenv::var("BOT_TOKEN").expect("missing BOT_TOKEN"))
         .intents(serenity::GatewayIntents::non_privileged())
-        .user_data_setup(move |_ctx, _ready, _framework| Box::pin(async move { Ok(Data::new()) }));
+        .user_data_setup(move |_ctx, _ready, _framework| {
+            Box::pin(async move { Ok(Lobbies::new()) })
+        });
 
     framework.run().await.unwrap();
 }

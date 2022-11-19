@@ -229,7 +229,7 @@ impl TryFrom<char> for Tile {
 impl Icon for Tile {
     fn icon(&self) -> char {
         match self.0 {
-            None => ' ',
+            None => '.',
             Some(piece) => piece.icon(),
         }
     }
