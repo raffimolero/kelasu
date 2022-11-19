@@ -135,7 +135,7 @@ impl Game {
                                 for (kind, emoji) in row {
                                     r.create_button(|b| {
                                         let cost = kind.merge_costs().unwrap();
-                                        let disabled = piece_count < cost;
+                                        let disabled = piece_count != cost;
                                         b.custom_id(format!("{kind:?}"))
                                             .label(format!("{kind:?} ({cost})"))
                                             .emoji(*emoji)
@@ -200,8 +200,8 @@ impl Game {
                     .components(|c| {
                         c.create_action_row(|r| {
                             r.create_button(|b| {
-                                b.custom_id("continue")
-                                    .label("Continue")
+                                b.custom_id("no")
+                                    .label("No")
                                     .emoji('⛔')
                                     .style(ButtonStyle::Secondary)
                             })
@@ -218,6 +218,7 @@ impl Game {
             .timeout(Duration::from_secs(60 * 5));
 
         // HACK: leverages try_join's behavior on err to return whenever the hell the first block wants to, while the second block waits
+        // should probably use select instead
         tokio::try_join!(
             async {
                 let interaction = interaction.await;
@@ -225,7 +226,7 @@ impl Game {
 
                 let button = match &interaction {
                     Some(interaction) => interaction.data.custom_id.as_str(),
-                    None => "continue",
+                    None => "no",
                 };
                 return Err::<(), _>(Ok(button == "resign"));
             },
@@ -233,22 +234,23 @@ impl Game {
                 sleep_until(Instant::now() + Duration::from_secs(3)).await;
                 message
                     .edit(ctx.discord(), |m| {
-                        m.components(|c| {
-                            c.create_action_row(|r| {
-                                r.create_button(|b| {
-                                    b.custom_id("continue")
-                                        .label("Continue")
-                                        .emoji('⛔')
-                                        .style(ButtonStyle::Secondary)
-                                })
-                                .create_button(|b| {
-                                    b.custom_id("resign")
-                                        .label("Resign")
-                                        .emoji('⚠')
-                                        .style(ButtonStyle::Danger)
+                        m.content("Are you still sure you want to resign?")
+                            .components(|c| {
+                                c.create_action_row(|r| {
+                                    r.create_button(|b| {
+                                        b.custom_id("no")
+                                            .label("No")
+                                            .emoji('⛔')
+                                            .style(ButtonStyle::Secondary)
+                                    })
+                                    .create_button(|b| {
+                                        b.custom_id("resign")
+                                            .label("Resign")
+                                            .emoji('⚠')
+                                            .style(ButtonStyle::Danger)
+                                    })
                                 })
                             })
-                        })
                     })
                     .await
                     .map_err(Err)?;
@@ -501,13 +503,14 @@ impl Game {
             };
             ctx.say(format!(
                 "It's {} <@{player}>'s turn. You have 5 minutes to move.",
-                if prev_turn != self.game.turn {
-                    "now"
-                } else {
+                if prev_turn == self.game.turn {
                     "still"
+                } else {
+                    "now"
                 }
             ))
             .await?;
+            prev_turn = self.game.turn;
 
             let p_move = if draw_offered {
                 self.offer_draw(ctx, player).await?
@@ -516,7 +519,6 @@ impl Game {
             };
 
             self.game.make_move(p_move);
-            prev_turn = self.game.turn;
         }
     }
 }
