@@ -114,15 +114,15 @@ impl Game {
         &self,
         ctx: Context<'_>,
         player: UserId,
-        count: usize,
+        piece_count: usize,
     ) -> Result<Option<PieceKind>, serenity::Error> {
         let pieces = [
-            (PieceKind::Warrior, "⚔️"),
-            (PieceKind::Runner, "👟"),
-            (PieceKind::Diplomat, "📜"),
-            (PieceKind::Champion, "💪"),
-            (PieceKind::General, "⭐"),
-            (PieceKind::Stone, "💎"),
+            (PieceKind::Warrior, '⚔'),
+            (PieceKind::Runner, '👟'),
+            (PieceKind::Diplomat, '📜'),
+            (PieceKind::Champion, '💪'),
+            (PieceKind::General, '⭐'),
+            (PieceKind::Stone, '💎'),
         ];
         let reply = ctx
             .send(|b| {
@@ -132,13 +132,17 @@ impl Game {
                             c.create_action_row(|r| {
                                 for (kind, emoji) in row {
                                     r.create_button(|b| {
+                                        let cost = kind.merge_costs().unwrap();
+                                        let disabled = piece_count < cost;
                                         b.custom_id(format!("{kind:?}"))
-                                            .label(format!("{kind:?} {emoji}"))
-                                            .style(if count >= kind.merge_costs().unwrap() {
-                                                ButtonStyle::Success
-                                            } else {
+                                            .label(format!("{kind:?} ({cost})"))
+                                            .emoji(*emoji)
+                                            .style(if disabled {
                                                 ButtonStyle::Danger
+                                            } else {
+                                                ButtonStyle::Primary
                                             })
+                                            .disabled(disabled)
                                     });
                                 }
                                 r
@@ -147,7 +151,8 @@ impl Game {
                         c.create_action_row(|r| {
                             r.create_button(|b| {
                                 b.custom_id("cancel")
-                                    .label("Cancel ⛔")
+                                    .label("Cancel")
+                                    .emoji('⛔')
                                     .style(ButtonStyle::Secondary)
                             })
                         })
@@ -207,27 +212,32 @@ impl Game {
                     .create_action_row(|r| {
                         r.create_button(|b| {
                             b.custom_id("resign")
-                                .label("Resign 🏳️")
+                                .label("Resign")
+                                .emoji('⚠')
                                 .style(ButtonStyle::Danger)
                         })
                         .create_button(|b| {
                             b.custom_id("draw")
-                                .label("Draw 🤝")
-                                .style(ButtonStyle::Secondary)
+                                .label("Draw")
+                                .emoji('🤝')
+                                .style(ButtonStyle::Primary)
                         })
                         .create_button(|b| {
                             b.custom_id("reset")
-                                .label("Reset 🔁")
-                                .style(ButtonStyle::Secondary)
+                                .label("Reset")
+                                .emoji('🔄')
+                                .style(ButtonStyle::Primary)
                         })
                         .create_button(|b| {
                             b.custom_id("move")
-                                .label("Move ♐")
+                                .label("Move")
+                                .emoji('♐')
                                 .style(ButtonStyle::Success)
                         })
                         .create_button(|b| {
                             b.custom_id("merge")
-                                .label("Merge ♻️")
+                                .label("Merge")
+                                .emoji('♻')
                                 .style(ButtonStyle::Success)
                         })
                     })
@@ -295,7 +305,7 @@ impl Game {
                     [] => Say("Select a piece."),
                     &[_single] => Say("Where do you want the piece to go?"),
                     &[from, to] => MakeMove(Move::Move { from, to }),
-                    pieces => Say("You selected too many pieces."),
+                    _ => Say("You selected too many pieces."),
                 },
                 "merge" => {
                     if let Some(kind) = self.select_merge(ctx, player, positions.len()).await? {
@@ -361,12 +371,14 @@ impl Game {
                         c.create_action_row(|r| {
                             r.create_button(|b| {
                                 b.custom_id("accept")
-                                    .label("🤝")
+                                    .label("Accept")
+                                    .emoji('🤝')
                                     .style(ButtonStyle::Secondary)
                             })
                             .create_button(|b| {
                                 b.custom_id("decline")
-                                    .label("❎")
+                                    .label("Decline")
+                                    .emoji('⛔')
                                     .style(ButtonStyle::Primary)
                             })
                         })
@@ -399,6 +411,7 @@ impl Game {
     }
 
     pub async fn start(mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
+        let mut prev_turn = self.game.turn;
         loop {
             let draw_offered = match self.game.state {
                 GameState::Ongoing { draw_offered } => draw_offered,
@@ -410,7 +423,12 @@ impl Game {
                 Team::Red => self.red,
             };
             ctx.say(format!(
-                "It's <@{player}>'s turn. You have 5 minutes to move."
+                "It's {} <@{player}>'s turn. You have 5 minutes to move.",
+                if prev_turn != self.game.turn {
+                    "now"
+                } else {
+                    "still"
+                }
             ))
             .await?;
 
@@ -421,6 +439,7 @@ impl Game {
             };
 
             self.game.make_move(p_move);
+            prev_turn = self.game.turn;
         }
     }
 }
