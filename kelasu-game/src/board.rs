@@ -65,16 +65,16 @@ impl Board {
         .unwrap()
     }
 
-    pub fn piece_count(&self, team: Team) -> i8 {
+    pub fn piece_count(&self, team: Team) -> u8 {
         self.tiles
             .iter()
             .filter(|t| {
                 t.0.map_or(false, |p| p.team == team && p.kind != PieceKind::Stone)
             })
-            .count() as i8
+            .count() as u8
     }
 
-    pub fn stone_count(&self, team: Team) -> i8 {
+    pub fn stone_count(&self, team: Team) -> u8 {
         let stone = Piece {
             team,
             kind: PieceKind::Stone,
@@ -82,7 +82,7 @@ impl Board {
         self.tiles
             .iter()
             .filter(|t| t.0.map_or(false, |p| p == stone))
-            .count() as i8
+            .count() as u8
     }
 }
 
@@ -338,7 +338,7 @@ impl Display for GameState {
 pub struct Game {
     pub state: GameState,
     pub turn: Team,
-    pub power: i8,
+    pub power: u8,
     pub board: Board,
     position_tracker: HashMap<(Team, Board), usize>,
     stagnation: u8,
@@ -513,7 +513,7 @@ impl Game {
             }
             Move::Merge { kind, mut pieces } => {
                 self.stagnation = 0;
-                self.power -= pieces.len() as i8;
+                self.power = self.power.saturating_sub(pieces.len() as u8);
                 let dest = pieces.pop().unwrap();
                 for pos in pieces {
                     self.board[pos].0 = None;
