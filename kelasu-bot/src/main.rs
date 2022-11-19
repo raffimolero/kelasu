@@ -1,6 +1,7 @@
 use crate::lobby::{Lobby, LobbyId};
 use std::collections::HashMap;
 
+use kelasu_game::piece::Team;
 use lobby::LobbyStatus;
 use poise::serenity_prelude::{self as serenity, Mutex};
 
@@ -77,7 +78,6 @@ async fn host(
 }
 
 /// Joins a lobby.
-#[poise::command(slash_command, prefix_command)]
 async fn join(
     ctx: Context<'_>,
     #[description = "The name of the lobby to join."] name: String,
@@ -121,6 +121,11 @@ async fn join(
     };
 
     let result = game.start(ctx).await?;
+    let result = match result.0 {
+        Some(Team::Blue) => format!("<@{}> won against <@{}>!", pair[0].0, pair[1].0),
+        Some(Team::Red) => format!("<@{}> won against <@{}>!", pair[1].0, pair[0].0),
+        None => format!("Draw between <@{}> and <@{}>!", pair[0].0, pair[1].0),
+    };
     ctx.say(format!("Game over!\nResult: {result}")).await?;
 
     // delete the lobby

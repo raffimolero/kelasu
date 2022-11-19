@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use kelasu_game::{
     board::{GameState, Move, Pos, VerifiedMove, Winner},
     piece::{Icon, PieceKind, Team},
@@ -9,6 +7,7 @@ use poise::{
     futures_util::StreamExt,
     serenity_prelude::{self as serenity, ButtonStyle, UserId},
 };
+use tokio::time::{sleep_until, Duration, Instant};
 
 use crate::Context;
 
@@ -141,7 +140,7 @@ impl Game {
                                             .label(format!("{kind:?} ({cost})"))
                                             .emoji(*emoji)
                                             .style(if disabled {
-                                                ButtonStyle::Danger
+                                                ButtonStyle::Secondary
                                             } else {
                                                 ButtonStyle::Primary
                                             })
@@ -156,7 +155,7 @@ impl Game {
                                 b.custom_id("cancel")
                                     .label("Cancel")
                                     .emoji('⛔')
-                                    .style(ButtonStyle::Secondary)
+                                    .style(ButtonStyle::Danger)
                             })
                         })
                     })
@@ -188,6 +187,126 @@ impl Game {
             "Stone" => PieceKind::Stone,
             _ => panic!("Invalid button ID!"),
         }))
+    }
+
+    async fn confirm_resign(
+        &self,
+        ctx: Context<'_>,
+        player: UserId,
+    ) -> Result<bool, serenity::Error> {
+        let reply = ctx
+            .send(|b| {
+                b.content("Are you sure you want to resign?\n(Wait 3 seconds)")
+                    .components(|c| {
+                        c.create_action_row(|r| {
+                            r.create_button(|b| {
+                                b.custom_id("continue")
+                                    .label("Continue")
+                                    .emoji('⛔')
+                                    .style(ButtonStyle::Secondary)
+                            })
+                        })
+                    })
+            })
+            .await?;
+
+        let mut message = reply.message().await?;
+        let message = message.to_mut();
+        let interaction = message
+            .await_component_interaction(ctx.discord())
+            .author_id(player)
+            .timeout(Duration::from_secs(60 * 5));
+
+        // HACK: leverages try_join's behavior on err to return whenever the hell the first block wants to, while the second block waits
+        tokio::try_join!(
+            async {
+                let interaction = interaction.await;
+                reply.delete(ctx).await.map_err(Err)?;
+
+                let button = match &interaction {
+                    Some(interaction) => interaction.data.custom_id.as_str(),
+                    None => "continue",
+                };
+                return Err::<(), _>(Ok(button == "resign"));
+            },
+            async {
+                sleep_until(Instant::now() + Duration::from_secs(3)).await;
+                message
+                    .edit(ctx.discord(), |m| {
+                        m.components(|c| {
+                            c.create_action_row(|r| {
+                                r.create_button(|b| {
+                                    b.custom_id("continue")
+                                        .label("Continue")
+                                        .emoji('⛔')
+                                        .style(ButtonStyle::Secondary)
+                                })
+                                .create_button(|b| {
+                                    b.custom_id("resign")
+                                        .label("Resign")
+                                        .emoji('⚠')
+                                        .style(ButtonStyle::Danger)
+                                })
+                            })
+                        })
+                    })
+                    .await
+                    .map_err(Err)?;
+                Ok(())
+            },
+        )
+        .unwrap_err()
+    }
+
+    async fn offer_draw(
+        &self,
+        ctx: Context<'_>,
+        player: UserId,
+    ) -> Result<VerifiedMove, serenity::Error> {
+        let reply = ctx
+            .send(|b| {
+                b.content("Your opponent is offering a draw.")
+                    .components(|c| {
+                        c.create_action_row(|r| {
+                            r.create_button(|b| {
+                                b.custom_id("accept")
+                                    .label("Accept")
+                                    .emoji('🤝')
+                                    .style(ButtonStyle::Secondary)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("decline")
+                                    .label("Decline")
+                                    .emoji('⛔')
+                                    .style(ButtonStyle::Primary)
+                            })
+                        })
+                    })
+            })
+            .await?;
+
+        let interaction = reply
+            .message()
+            .await?
+            .await_component_interaction(ctx.discord())
+            .author_id(player)
+            .timeout(Duration::from_secs(60 * 5))
+            .await;
+
+        reply.delete(ctx).await?;
+
+        let button = match &interaction {
+            Some(interaction) => interaction.data.custom_id.as_str(),
+            None => "decline",
+        };
+
+        let p_move = match button {
+            "accept" => Move::Draw,
+            "decline" => Move::DeclineDraw,
+            _ => panic!("Invalid button ID!"),
+        };
+
+        Ok(self.game.verify_move(p_move).unwrap())
     }
 
     async fn make_move(
@@ -366,102 +485,6 @@ impl Game {
                 Reset => reset(&mut held_digit, &mut positions),
             }
         }
-    }
-
-    async fn confirm_resign(
-        &self,
-        ctx: Context<'_>,
-        player: UserId,
-    ) -> Result<bool, serenity::Error> {
-        let reply = ctx
-            .send(|b| {
-                b.content("Are you sure you want to resign?")
-                    .components(|c| {
-                        c.create_action_row(|r| {
-                            r.create_button(|b| {
-                                b.custom_id("resign")
-                                    .label("Resign")
-                                    .emoji('⚠')
-                                    .style(ButtonStyle::Danger)
-                            })
-                            .create_button(|b| {
-                                b.custom_id("continue")
-                                    .label("Continue")
-                                    .emoji('⛔')
-                                    .style(ButtonStyle::Secondary)
-                            })
-                        })
-                    })
-            })
-            .await?;
-
-        let interaction = reply
-            .message()
-            .await?
-            .await_component_interaction(ctx.discord())
-            .author_id(player)
-            .timeout(Duration::from_secs(60 * 5))
-            .await;
-
-        reply.delete(ctx).await?;
-
-        let button = match &interaction {
-            Some(interaction) => interaction.data.custom_id.as_str(),
-            None => "continue",
-        };
-
-        Ok(button == "resign")
-    }
-
-    async fn offer_draw(
-        &self,
-        ctx: Context<'_>,
-        player: UserId,
-    ) -> Result<VerifiedMove, serenity::Error> {
-        let reply = ctx
-            .send(|b| {
-                b.content("Your opponent is offering a draw.")
-                    .components(|c| {
-                        c.create_action_row(|r| {
-                            r.create_button(|b| {
-                                b.custom_id("accept")
-                                    .label("Accept")
-                                    .emoji('🤝')
-                                    .style(ButtonStyle::Secondary)
-                            })
-                            .create_button(|b| {
-                                b.custom_id("decline")
-                                    .label("Decline")
-                                    .emoji('⛔')
-                                    .style(ButtonStyle::Primary)
-                            })
-                        })
-                    })
-            })
-            .await?;
-
-        let interaction = reply
-            .message()
-            .await?
-            .await_component_interaction(ctx.discord())
-            .author_id(player)
-            .timeout(Duration::from_secs(60 * 5))
-            .await;
-
-        reply.delete(ctx).await?;
-
-        let button = match &interaction {
-            Some(interaction) => interaction.data.custom_id.as_str(),
-            None => "decline",
-        };
-
-        let p_move = match button {
-            "accept" => Move::Draw,
-            "decline" => Move::DeclineDraw,
-            _ => panic!("Invalid button ID!"),
-        };
-
-        Ok(self.game.verify_move(p_move).unwrap())
     }
 
     pub async fn start(mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
