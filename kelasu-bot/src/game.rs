@@ -1,8 +1,8 @@
-use std::{str::from_utf8, time::Duration};
+use std::time::Duration;
 
 use kelasu_game::{
-    board::{self, GameState, Move, Pos, VerifiedMove, Winner},
-    piece::{Icon, Piece, Team},
+    board::{GameState, Move, Pos, VerifiedMove, Winner},
+    piece::{Icon, Team},
     Game as BoardGame,
 };
 use poise::{
@@ -35,7 +35,7 @@ impl Game {
         }
     }
 
-    fn board_repr(&self, positions: &[Pos], cursor: Pos) -> String {
+    fn board_repr(&self, positions: &[Pos]) -> String {
         /*
         000: None
         001: Left
@@ -54,8 +54,8 @@ impl Game {
         let fences = {
             let mut fences = [[0b_000_u8; 11]; 10];
             for [x, y] in positions.iter().skip(1).map(xy) {
-                fences[y][x + 0] |= 0b_010;
-                fences[y][x + 1] |= 0b_001;
+                fences[y][x + 0] |= 0b_001;
+                fences[y][x + 1] |= 0b_010;
             }
 
             if let Some([x, y]) = positions.first().map(xy) {
@@ -63,15 +63,11 @@ impl Game {
                 fences[y][x + 1] = 0b_101;
             }
 
-            let [x, y] = xy(&cursor);
-            fences[y][x + 0] = 0b_110;
-            fences[y][x + 1] = 0b_111;
-
             fences
         };
 
         fn fence_icon(fence: u8) -> char {
-            b" []|()<>"[fence as usize] as char
+            b" []|<>"[fence as usize] as char
         }
 
         // this string is only for reference, it will not actually be displayed :P
@@ -108,8 +104,7 @@ impl Game {
         board_repr
     }
 
-    // TODO: direct pos notation instead of joystick
-    async fn get_move_joystick(
+    async fn get_move_pos(
         &self,
         ctx: Context<'_>,
         player: UserId,
@@ -118,54 +113,43 @@ impl Game {
             .send(|b| {
                 b.content("loading...").components(|c| {
                     c.create_action_row(|r| {
+                        (0..5).into_iter().fold(r, |r, i| {
+                            r.create_button(|b| {
+                                b.custom_id(i)
+                                    .label(i)
+                                    .style(serenity::ButtonStyle::Secondary)
+                            })
+                        })
+                    })
+                    .create_action_row(|r| {
+                        (5..10).fold(r, |r, i| {
+                            r.create_button(|b| {
+                                b.custom_id(i)
+                                    .label(i)
+                                    .style(serenity::ButtonStyle::Secondary)
+                            })
+                        })
+                    })
+                    .create_action_row(|r| {
                         r.create_button(|b| {
                             b.custom_id("reset")
                                 .label("🔁")
                                 .style(serenity::ButtonStyle::Secondary)
                         })
                         .create_button(|b| {
-                            b.custom_id("up")
-                                .label("🔼")
-                                .style(serenity::ButtonStyle::Primary)
+                            b.custom_id("resign")
+                                .label("🏳️")
+                                .style(serenity::ButtonStyle::Danger)
                         })
                         .create_button(|b| {
-                            b.custom_id("submit")
-                                .label("✅")
-                                .style(serenity::ButtonStyle::Success)
-                        })
-                    })
-                    .create_action_row(|r| {
-                        r.create_button(|b| {
-                            b.custom_id("left")
-                                .label("◀️")
-                                .style(serenity::ButtonStyle::Primary)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("select")
-                                .label("🅾️")
-                                .style(serenity::ButtonStyle::Secondary)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("right")
-                                .label("▶️")
-                                .style(serenity::ButtonStyle::Primary)
-                        })
-                    })
-                    .create_action_row(|r| {
-                        r.create_button(|b| {
                             b.custom_id("draw")
                                 .label("🤝")
                                 .style(serenity::ButtonStyle::Secondary)
                         })
                         .create_button(|b| {
-                            b.custom_id("down")
-                                .label("🔽")
-                                .style(serenity::ButtonStyle::Primary)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("resign")
-                                .label("🏳️")
-                                .style(serenity::ButtonStyle::Danger)
+                            b.custom_id("submit")
+                                .label("✅")
+                                .style(serenity::ButtonStyle::Success)
                         })
                     })
                 })
@@ -174,13 +158,7 @@ impl Game {
 
         let mut message = reply.message().await?.into_owned();
 
-        fn shift_cursor(cursor: &mut Pos, dx: i8, dy: i8) {
-            if let Some(new) = cursor.shift(dx, dy) {
-                *cursor = new;
-            }
-        }
-
-        let mut cursor = Pos(44);
+        let mut held_digit = None;
         let mut positions: Vec<Pos> = Vec::with_capacity(10);
         let mut interactions = message
             .await_component_interactions(ctx.discord())
@@ -188,18 +166,19 @@ impl Game {
             .author_id(player)
             .build();
 
-        'msg: loop {
+        loop {
             message
                 .edit(&ctx.discord().http, |m| {
-                    m.content(self.board_repr(&positions, cursor))
+                    m.content(self.board_repr(&positions))
                 })
                 .await?;
 
             let (interaction, rest) = interactions.into_future().await;
             interactions = rest;
 
-            let button_id = match &interaction {
+            let button = match &interaction {
                 Some(interaction) => {
+                    // HACK: create and delete a response so discord knows something happened
                     interaction
                         .create_interaction_response(&ctx.discord().http, |b| {
                             b.interaction_response_data(|r| r.ephemeral(true).content("processed."))
@@ -216,51 +195,114 @@ impl Game {
                 }
             };
 
-            let p_move = 'a: {
-                match button_id {
-                    "resign" => break 'a Move::Resign,
-                    "draw" => break 'a Move::Draw,
-                    "reset" => positions.clear(),
-                    "up" => shift_cursor(&mut cursor, 0, -1),
-                    "down" => shift_cursor(&mut cursor, 0, 1),
-                    "left" => shift_cursor(&mut cursor, -1, 0),
-                    "right" => shift_cursor(&mut cursor, 1, 0),
-                    "select" => {
+            enum Input {
+                Say(&'static str),
+                InstantMove(Move),
+                Digit(i8),
+                Reset,
+            }
+            use Input::*;
+            let input = match button {
+                "resign" => InstantMove(Move::Resign),
+                "draw" => InstantMove(Move::Draw),
+                "reset" => Reset,
+                "submit" => match positions.as_slice() {
+                    [] => Say("Select a piece."),
+                    &[_single] => Say("Where do you want the piece to go?"),
+                    &[from, to] => InstantMove(Move::Move { from, to }),
+                    pieces => {
+                        // check if the number of positions matches a merge
+                        // then check if there are ambiguities for merging
+                        // if there are, ask the player which one to merge
+                        Say("Piece merging is not implemented yet '~'")
+                    }
+                },
+                "0" => Digit(0),
+                "1" => Digit(1),
+                "2" => Digit(2),
+                "3" => Digit(3),
+                "4" => Digit(4),
+                "5" => Digit(5),
+                "6" => Digit(6),
+                "7" => Digit(7),
+                "8" => Digit(8),
+                "9" => Digit(9),
+                _ => Say("Unknown button..."),
+            };
+            match input {
+                Say(message) => {
+                    ctx.say(message).await?;
+                }
+                InstantMove(p_move) => match self.game.verify_move(p_move) {
+                    Ok(p_move) => return Ok(p_move),
+                    Err(e) => {
+                        ctx.say(format!("Invalid move: {e}")).await?;
+                        positions = vec![];
+                    }
+                },
+                Digit(num) => match held_digit.take() {
+                    Some(tens) => {
+                        let cursor = Pos(tens * 10 + num);
                         if let Some(idx) = positions.iter().position(|p| *p == cursor) {
                             positions.swap_remove(idx);
                         } else {
                             positions.push(cursor);
                         }
                     }
-                    "submit" => match positions.as_slice() {
-                        [] => {
-                            ctx.say("Select a piece.").await?;
-                        }
-                        &[_single] => {
-                            ctx.say("Where do you want the piece to go?").await?;
-                        }
-                        &[from, to] => break 'a Move::Move { from, to },
-                        pieces => {
-                            // check if the number of positions matches a merge
-                            // then check if there are ambiguities for merging
-                            // if there are, ask the player which one to merge
-                            ctx.say("Piece merging is not implemented yet '~'").await?;
-                        }
-                    },
-                    other => {
-                        eprintln!("Unknown button...");
-                    }
-                }
-                continue 'msg;
-            };
-            match self.game.verify_move(p_move) {
-                Ok(p_move) => return Ok(p_move),
-                Err(e) => {
-                    ctx.say(format!("Invalid move: {e}")).await?;
-                    positions = vec![];
-                }
+                    None => held_digit = Some(num),
+                },
+                Reset => positions.clear(),
             }
         }
+    }
+
+    async fn offer_draw(
+        &self,
+        ctx: Context<'_>,
+        player: UserId,
+    ) -> Result<VerifiedMove, serenity::Error> {
+        let reply = ctx
+            .send(|b| {
+                b.content("Your opponent is offering a draw.")
+                    .components(|c| {
+                        c.create_action_row(|r| {
+                            r.create_button(|b| {
+                                b.custom_id("accept")
+                                    .label("🤝")
+                                    .style(serenity::ButtonStyle::Secondary)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("decline")
+                                    .label("❎")
+                                    .style(serenity::ButtonStyle::Primary)
+                            })
+                        })
+                    })
+            })
+            .await?;
+
+        let interaction = reply
+            .message()
+            .await?
+            .await_component_interaction(ctx.discord())
+            .author_id(player)
+            .timeout(Duration::from_secs(60 * 5))
+            .await;
+
+        reply.delete(ctx).await?;
+
+        let button = match &interaction {
+            Some(interaction) => interaction.data.custom_id.as_str(),
+            None => "decline",
+        };
+
+        let p_move = match button {
+            "accept" => Move::Draw,
+            "decline" => Move::DeclineDraw,
+            _ => panic!("Invalid button ID!"),
+        };
+
+        Ok(self.game.verify_move(p_move).unwrap())
     }
 
     pub async fn start(mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
@@ -280,9 +322,9 @@ impl Game {
             .await?;
 
             let p_move = if draw_offered {
-                todo!()
+                self.offer_draw(ctx, player).await?
             } else {
-                self.get_move_joystick(ctx, player).await?
+                self.get_move_pos(ctx, player).await?
             };
 
             self.game.make_move(p_move);
