@@ -267,7 +267,7 @@ impl Game {
     ) -> Result<VerifiedMove, serenity::Error> {
         let reply = ctx
             .send(|b| {
-                b.content("Your opponent is offering a draw.")
+                b.content(format!("<@{player}> Your opponent is offering a draw."))
                     .components(|c| {
                         c.create_action_row(|r| {
                             r.create_button(|b| {
@@ -315,7 +315,18 @@ impl Game {
         &self,
         ctx: Context<'_>,
         player: UserId,
+        prev_turn: Team,
     ) -> Result<VerifiedMove, serenity::Error> {
+        ctx.say(format!(
+            "It's {} <@{player}>'s turn. You have 5 minutes to move.",
+            if prev_turn == self.game.turn {
+                "still"
+            } else {
+                "now"
+            }
+        ))
+        .await?;
+
         let reply = ctx
             .send(|b| {
                 b.content("loading...").components(|c| {
@@ -507,23 +518,14 @@ impl Game {
                 Team::Blue => self.blue,
                 Team::Red => self.red,
             };
-            ctx.say(format!(
-                "It's {} <@{player}>'s turn. You have 5 minutes to move.",
-                if prev_turn == self.game.turn {
-                    "still"
-                } else {
-                    "now"
-                }
-            ))
-            .await?;
-            prev_turn = self.game.turn;
 
             let p_move = if draw_offered {
                 self.offer_draw(ctx, player).await?
             } else {
-                self.make_move(ctx, player).await?
+                self.make_move(ctx, player, prev_turn).await?
             };
 
+            prev_turn = self.game.turn;
             self.game.make_move(p_move);
         }
     }
