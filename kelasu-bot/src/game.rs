@@ -5,7 +5,10 @@ use kelasu_game::{
     piece::{Icon, Piece, Team},
     Game as BoardGame,
 };
-use poise::serenity_prelude::{self as serenity, UserId};
+use poise::{
+    futures_util::StreamExt,
+    serenity_prelude::{self as serenity, UserId},
+};
 
 use crate::Context;
 
@@ -39,76 +42,108 @@ impl Game {
     ) -> Result<VerifiedMove, serenity::Error> {
         let reply = ctx
             .send(|b| {
-                b.content(self.game.to_string()).components(|mut c| {
+                b.content(self.game.to_string()).components(|c| {
                     c.create_action_row(|r| {
                         r.create_button(|b| {
-                            b.custom_id("resign")
-                                .label("Resign")
-                                .style(serenity::ButtonStyle::Danger)
+                            b.custom_id("reset")
+                                .label("🔁")
+                                .style(serenity::ButtonStyle::Secondary)
                         })
                         .create_button(|b| {
-                            b.custom_id("draw")
-                                .label("Offer Draw")
-                                .style(serenity::ButtonStyle::Danger)
+                            b.custom_id("up")
+                                .label("🔼")
+                                .style(serenity::ButtonStyle::Primary)
                         })
                         .create_button(|b| {
                             b.custom_id("submit")
-                                .label("Make Move")
+                                .label("✅")
+                                .style(serenity::ButtonStyle::Success)
+                        })
+                    })
+                    .create_action_row(|r| {
+                        r.create_button(|b| {
+                            b.custom_id("left")
+                                .label("◀️")
+                                .style(serenity::ButtonStyle::Primary)
+                        })
+                        .create_button(|b| {
+                            b.custom_id("select")
+                                .label("🅾️")
+                                .style(serenity::ButtonStyle::Secondary)
+                        })
+                        .create_button(|b| {
+                            b.custom_id("right")
+                                .label("▶️")
+                                .style(serenity::ButtonStyle::Primary)
+                        })
+                    })
+                    .create_action_row(|r| {
+                        r.create_button(|b| {
+                            b.custom_id("draw")
+                                .label("🤝")
+                                .style(serenity::ButtonStyle::Secondary)
+                        })
+                        .create_button(|b| {
+                            b.custom_id("down")
+                                .label("🔽")
+                                .style(serenity::ButtonStyle::Primary)
+                        })
+                        .create_button(|b| {
+                            b.custom_id("resign")
+                                .label("🏳️")
                                 .style(serenity::ButtonStyle::Danger)
                         })
-                    });
-                    for (y, row) in self.game.board.tiles.chunks(10).enumerate() {
-                        c.create_action_row(|mut r| {
-                            for (x, tile) in row.iter().enumerate() {
-                                r.create_button(|b| {
-                                    b.custom_id(format!("{y}{x}")).label(tile.icon()).style(
-                                        match tile.0 {
-                                            Some(Piece {
-                                                team: Team::Blue, ..
-                                            }) => serenity::ButtonStyle::Primary,
-                                            Some(Piece {
-                                                team: Team::Red, ..
-                                            }) => serenity::ButtonStyle::Danger,
-                                            None => serenity::ButtonStyle::Secondary,
-                                        },
-                                    )
-                                });
-                            }
-                            r
-                        });
-                    }
-                    c
+                    })
                 })
             })
             .await?;
 
-        let message = reply.message().await?;
+        let mut message = reply.message().await?.into_owned();
 
-        let mut positions = vec![];
+        // let mut positions = vec![];
+        let mut interactions = message
+            .await_component_interactions(ctx.discord())
+            .timeout(Duration::from_secs(60 * 5))
+            .author_id(player)
+            .build();
         loop {
-            let interaction = message
-                .await_component_interaction(ctx.discord())
-                .timeout(Duration::from_secs(60 * 5))
-                .author_id(player)
-                .await;
+            message
+                .edit(&ctx.discord().http, |m| m.content("new content"))
+                .await?;
+
+            let (interaction, rest) = interactions.into_future().await;
+            interactions = rest;
 
             let button_id = match &interaction {
-                Some(interaction) => interaction.data.custom_id.as_str(),
+                Some(interaction) => {
+                    interaction
+                        .create_interaction_response(&ctx.discord().http, |b| {
+                            b.interaction_response_data(|r| r.ephemeral(true).content("hi"))
+                        })
+                        .await?;
+                    interaction.data.custom_id.as_str()
+                }
                 None => {
                     ctx.say("Game Over! You didn't interact in time.").await?;
                     "resign"
                 }
             };
 
+            ctx.say(button_id).await?;
+            /*
             let p_move = match button_id {
                 "resign" => Move::Resign,
                 "draw" => Move::Draw,
                 "submit" => match positions.as_slice() {
-                    &[from, to] => Move::Move { from, to },
+                    [] => {
+                        ctx.say("Select a piece.").await?;
+                        continue;
+                    }
                     &[_single] => {
                         ctx.say("Where do you want the piece to go?").await?;
                         continue;
                     }
+                    &[from, to] => Move::Move { from, to },
                     pieces => {
                         // check if the number of positions matches a merge
                         // then check if there are ambiguities for merging
@@ -116,24 +151,19 @@ impl Game {
                         todo!()
                     }
                 },
-                pos => match pos.parse::<Pos>() {
-                    Ok(p) => {
-                        // TODO: check if the position is already in the vec. if so, remove it.
-                        positions.push(p);
-                        continue;
-                    } // pushin' 🅿
-                    Err(_) => {
-                        eprintln!("Unknown button...");
-                        continue;
-                    }
-                },
+                other => {
+                    eprintln!("Unknown button...");
+                    continue;
+                }
             };
             match self.game.verify_move(p_move) {
                 Ok(p_move) => return Ok(p_move),
                 Err(e) => {
                     ctx.say(format!("Invalid move: {e}")).await?;
+                    positions = vec![];
                 }
             }
+            */
         }
     }
 
@@ -161,5 +191,6 @@ impl Game {
 
             self.game.make_move(p_move);
         }
+        // TODO: cleanup
     }
 }
