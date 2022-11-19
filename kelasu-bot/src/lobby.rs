@@ -4,7 +4,7 @@ use crate::{
 };
 use std::fmt::Display;
 
-use poise::serenity_prelude::{self as serenity, ChannelId, User, UserId};
+use poise::serenity_prelude::{self as serenity, User, UserId};
 
 pub type LobbyId = String;
 

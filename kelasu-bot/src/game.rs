@@ -35,7 +35,7 @@ impl Game {
         }
     }
 
-    fn board_repr(&self, positions: &[Pos], held_digit: Option<i8>) -> String {
+    fn board_repr(&self, power: u8, positions: &[Pos], held_digit: Option<i8>) -> String {
         /*
         000: None
         001: Left
@@ -77,8 +77,9 @@ impl Game {
         }
 
         // this string is only for reference, it will not actually be displayed :P
-        let board_repr_len = "```\n\
-            0 1 2 3 4 5 6 7 8 9 \n\
+        let board_repr_len = "Power: 8\n\
+            ```\n\
+               0 1 2 3 4 5 6 7 8 9 \n\
             0 [_|_(_)_ _ _ _ _ _[_]\n\
             1  _ _ _ _ _ _ _ _ _ _ \n\
             2  _ _ _ _[_[_[_]_ _ _ \n\
@@ -93,7 +94,9 @@ impl Game {
         .len();
 
         let mut board_repr = String::with_capacity(board_repr_len);
-        board_repr.push_str("```\n   0 1 2 3 4 5 6 7 8 9 \n");
+        board_repr.push_str("Power: ");
+        board_repr.push(char::from_digit(power.into(), 10).expect("IT'S OVER 9"));
+        board_repr.push_str("\n```\n   0 1 2 3 4 5 6 7 8 9 \n");
 
         for (y, row) in self.game.board.tiles.chunks(10).enumerate() {
             board_repr.push(char::from_digit(y as u32, 10).unwrap());
@@ -258,7 +261,7 @@ impl Game {
         loop {
             message
                 .edit(&ctx.discord().http, |m| {
-                    m.content(self.board_repr(&positions, held_digit))
+                    m.content(self.board_repr(self.game.power, &positions, held_digit))
                 })
                 .await?;
 
@@ -298,7 +301,13 @@ impl Game {
             }
             use Instruction::*;
             let instruction = match button {
-                "resign" => MakeMove(Move::Resign),
+                "resign" => {
+                    if self.confirm_resign(ctx, player).await? {
+                        MakeMove(Move::Resign)
+                    } else {
+                        Noop
+                    }
+                }
                 "draw" => MakeMove(Move::Draw),
                 "reset" => Reset,
                 "move" => match positions.as_slice() {
@@ -357,6 +366,51 @@ impl Game {
                 Reset => reset(&mut held_digit, &mut positions),
             }
         }
+    }
+
+    async fn confirm_resign(
+        &self,
+        ctx: Context<'_>,
+        player: UserId,
+    ) -> Result<bool, serenity::Error> {
+        let reply = ctx
+            .send(|b| {
+                b.content("Are you sure you want to resign?")
+                    .components(|c| {
+                        c.create_action_row(|r| {
+                            r.create_button(|b| {
+                                b.custom_id("resign")
+                                    .label("Resign")
+                                    .emoji('⚠')
+                                    .style(ButtonStyle::Danger)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("continue")
+                                    .label("Continue")
+                                    .emoji('⛔')
+                                    .style(ButtonStyle::Secondary)
+                            })
+                        })
+                    })
+            })
+            .await?;
+
+        let interaction = reply
+            .message()
+            .await?
+            .await_component_interaction(ctx.discord())
+            .author_id(player)
+            .timeout(Duration::from_secs(60 * 5))
+            .await;
+
+        reply.delete(ctx).await?;
+
+        let button = match &interaction {
+            Some(interaction) => interaction.data.custom_id.as_str(),
+            None => "continue",
+        };
+
+        Ok(button == "resign")
     }
 
     async fn offer_draw(
