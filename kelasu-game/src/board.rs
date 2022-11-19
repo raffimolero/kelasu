@@ -19,20 +19,23 @@ pub struct Pos(pub i8);
 impl Pos {
     /// returns one of the 8 possible directions. None if knightwise, for example.
     pub fn dir_to(self, rhs: Self) -> Option<([i8; 2], u8)> {
-        let x1 = (self.0 % 10) as i8;
-        let y1 = (self.0 / 10) as i8;
-        let x2 = (rhs.0 % 10) as i8;
-        let y2 = (rhs.0 / 10) as i8;
+        let [x1, y1] = self.xy();
+        let [x2, y2] = rhs.xy();
         let dx = x2 - x1;
         let dy = y2 - y1;
         ((dx == 0 || dy == 0) ^ (dx.abs() == dy.abs()))
             .then(|| ([dx.signum(), dy.signum()], dx.abs().max(dy.abs()) as u8))
     }
 
-    pub fn shift(mut self, dx: i8, dy: i8) -> Option<Self> {
-        let shift_amt = dy * 10 + dx;
-        self.0 += shift_amt;
-        (0..=99).contains(&self.0).then_some(self)
+    pub fn xy(self) -> [i8; 2] {
+        [self.0 % 10, self.0 / 10]
+    }
+
+    pub fn shift(self, dx: i8, dy: i8) -> Option<Self> {
+        let [mut x, mut y] = self.xy();
+        x += dx;
+        y += dy;
+        ((0..=9).contains(&x) && (0..=9).contains(&y)).then_some(Self(y * 10 + x))
     }
 }
 
