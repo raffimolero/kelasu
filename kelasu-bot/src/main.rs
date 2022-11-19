@@ -78,6 +78,7 @@ async fn host(
 }
 
 /// Joins a lobby.
+#[poise::command(slash_command, prefix_command)]
 async fn join(
     ctx: Context<'_>,
     #[description = "The name of the lobby to join."] name: String,
