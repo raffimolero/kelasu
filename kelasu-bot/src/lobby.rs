@@ -59,16 +59,14 @@ pub struct Lobby {
     pub id: LobbyId,
     /// the first player is the host.
     pub players: Vec<UserInfo>,
-    pub channel: ChannelId, // RESOLVE: is this necessary?
     pub status: LobbyStatus,
 }
 
 impl Lobby {
-    pub fn new(id: LobbyId, host: UserInfo, channel: ChannelId) -> Self {
+    pub fn new(id: LobbyId, host: UserInfo) -> Self {
         Self {
             id,
             players: vec![host],
-            channel,
             status: LobbyStatus::new(),
         }
     }
@@ -144,7 +142,7 @@ impl Lobby {
         &mut self,
         ctx: Context<'_>,
         teams: [TeamPreference; 2],
-    ) -> Result<(), serenity::Error> {
+    ) -> Result<Game, serenity::Error> {
         use TeamPreference::*;
         let mut pair = [self.players[0].id, self.players[1].id];
 
@@ -172,8 +170,6 @@ impl Lobby {
             .await?;
 
         self.status = LobbyStatus::Ongoing;
-        ctx.say(format!("Game over!\nResult: {}", game.start(ctx).await?))
-            .await?;
-        Ok(())
+        Ok(game)
     }
 }

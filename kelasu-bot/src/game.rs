@@ -212,7 +212,7 @@ impl Game {
                         })
                         .create_button(|b| {
                             b.custom_id("draw")
-                                .label("Offer Draw 🤝")
+                                .label("Draw 🤝")
                                 .style(ButtonStyle::Secondary)
                         })
                         .create_button(|b| {
@@ -422,6 +422,5 @@ impl Game {
 
             self.game.make_move(p_move);
         }
-        // TODO: cleanup
     }
 }

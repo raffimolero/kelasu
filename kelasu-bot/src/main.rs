@@ -69,10 +69,7 @@ async fn host(
     let response = if lobbies.contains_key(&name) {
         "That lobby already exists.".to_owned()
     } else {
-        lobbies.insert(
-            name.clone(),
-            Lobby::new(name.clone(), ctx.author().into(), ctx.channel_id()),
-        );
+        lobbies.insert(name.clone(), Lobby::new(name.clone(), ctx.author().into()));
         format!("Created lobby: {name}")
     };
     ctx.say(response).await?;
@@ -110,16 +107,25 @@ async fn join(
     // ask both players their preferred teams
     let teams = Lobby::get_user_teams(ctx, pair).await?;
 
-    // find the lobby again
-    let mut lobbies = ctx.data().lobbies.lock().await;
-    let Some(lobby) = lobbies
+    let game = {
+        // find the lobby again
+        let mut lobbies = ctx.data().lobbies.lock().await;
+        let Some(lobby) = lobbies
         .get_mut(&name) else {
             ctx.say(format!("This lobby ({name:?}) somehow no longer exists...")).await?;
             return Ok(())
         };
 
-    // start
-    lobby.start(ctx, teams).await?;
+        // start
+        lobby.start(ctx, teams).await?
+    };
+
+    let result = game.start(ctx).await?;
+    ctx.say(format!("Game over!\nResult: {result}")).await?;
+
+    // delete the lobby
+    let mut lobbies = ctx.data().lobbies.lock().await;
+    lobbies.remove(&name);
     Ok(())
 }
 
