@@ -475,9 +475,15 @@ impl Game {
                     Some(tens) => {
                         let cursor = Pos(tens * 10 + num);
                         match positions.iter().position(|p| *p == cursor) {
-                            Some(0) => reset(&mut held_digit, &mut positions),
                             Some(idx) => {
-                                positions.remove(idx);
+                                if idx == positions.len() - 1 {
+                                    // selecting the same thing twice pops it
+                                    positions.pop();
+                                } else {
+                                    // selecting once will change the selection
+                                    let cursor = positions.remove(idx);
+                                    positions.push(cursor);
+                                }
                             }
                             None => positions.push(cursor),
                         }
