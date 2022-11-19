@@ -3,6 +3,7 @@ use crate::util::{verify_polyomino, NonPolyomino};
 use std::{
     collections::HashMap,
     fmt::Display,
+    num::ParseIntError,
     ops::{Index, IndexMut},
     str::FromStr,
 };
@@ -32,6 +33,24 @@ impl Pos {
         let shift_amt = dy * 10 + dx;
         self.0 += shift_amt;
         (0..=99).contains(&self.0).then_some(self)
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("Positions must be integers from 00 to 99.")]
+pub enum InvalidPos {
+    NaN(#[from] ParseIntError),
+    OutOfBounds,
+}
+
+impl FromStr for Pos {
+    type Err = InvalidPos;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let p = s.parse::<u8>()?;
+        (p < 100)
+            .then_some(Self(p as i8))
+            .ok_or(InvalidPos::OutOfBounds)
     }
 }
 
@@ -237,13 +256,11 @@ impl FromStr for Move {
         };
 
         let get_pos = |t: &str| {
-            const INVALID_POS: InvalidMoveSyntax = InvalidMoveSyntax::InvalidParameter(
-                "Positions must be <yx> coordinates from 00 to 99.",
-            );
-            if t.len() != 2 {
-                return Err(INVALID_POS);
-            }
-            t.parse::<i8>().map(Pos).map_err(|_| INVALID_POS)
+            t.parse::<Pos>().map_err(|_| {
+                InvalidMoveSyntax::InvalidParameter(
+                    "Positions must be <yx> coordinates from 00 to 99.",
+                )
+            })
         };
 
         match next_token("What kind of move did you want to make?")? {
@@ -316,7 +333,7 @@ impl Display for Winner {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GameState {
-    Ongoing { draw_offered: bool }, // TODO: move draw_offered into Game
+    Ongoing { draw_offered: bool },
     Finished(Winner),
 }
 
