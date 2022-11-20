@@ -567,7 +567,7 @@ impl Game {
             )
             .await?;
 
-        let mut prev_turn = self.game.turn;
+        let mut prev_turn = !self.game.turn;
         loop {
             let draw_offered = match self.game.state {
                 GameState::Ongoing { draw_offered } => draw_offered,

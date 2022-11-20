@@ -2,7 +2,7 @@ use crate::lobby::{Lobby, LobbyId};
 use std::{collections::HashMap, sync::Arc};
 
 use kelasu_game::piece::Team;
-use poise::serenity_prelude::{self as serenity, Mutex, RwLock};
+use poise::serenity_prelude::{self as serenity, RwLock};
 
 mod game;
 mod lobby;
@@ -131,8 +131,7 @@ async fn join(
     ctx.say(format!("Game over!\nResult: {result}")).await?;
 
     // delete the lobby
-    let mut lobbies = ctx.data().lobbies.lock().await;
-    lobbies.remove(&name);
+    ctx.data().lobbies.write().await.remove(&name);
     Ok(())
 }
 
