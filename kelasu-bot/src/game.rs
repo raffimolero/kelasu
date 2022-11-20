@@ -557,7 +557,7 @@ impl Game {
             .say(
                 &ctx.discord().http,
                 format!(
-                    "Game starting!\n\
+                    "**Game starting!**\n\
                     Lobby: {}\n\
                     Blue: <@{}>,\n\
                     Red: <@{}>.\n\

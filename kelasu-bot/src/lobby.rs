@@ -177,7 +177,7 @@ impl Lobby {
         ctx: Context<'_>,
         teams: [TeamPreference; 2],
     ) -> Result<Game, serenity::Error> {
-        ctx.say("Starting lobby...").await?;
+        ctx.say("*Starting lobby...*").await?;
 
         use TeamPreference::*;
         let mut pair = [self.players[0].id, self.players[1].id];
