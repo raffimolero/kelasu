@@ -108,7 +108,7 @@ async fn join(
     // ask both players their preferred teams
     let teams = Lobby::get_user_teams(ctx, pair).await?;
 
-    let game = {
+    let mut game = {
         // find the lobby again
         let mut lobbies = ctx.data().lobbies.write().await;
         let Some(lobby) = lobbies
@@ -124,9 +124,9 @@ async fn join(
 
     let result = game.start(ctx).await?;
     let result = match result.0 {
-        Some(Team::Blue) => format!("<@{}> won against <@{}>!", pair[0].0, pair[1].0),
-        Some(Team::Red) => format!("<@{}> won against <@{}>!", pair[1].0, pair[0].0),
-        None => format!("Draw between <@{}> and <@{}>!", pair[0].0, pair[1].0),
+        Some(Team::Blue) => format!("<@{}> won against <@{}>!", game.blue, game.red),
+        Some(Team::Red) => format!("<@{}> won against <@{}>!", game.red, game.blue),
+        None => format!("Draw between <@{}> and <@{}>!", game.blue, game.red),
     };
     ctx.say(format!("Game over!\nResult: {result}")).await?;
 

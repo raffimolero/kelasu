@@ -552,7 +552,7 @@ impl Game {
         Ok(p_move)
     }
 
-    pub async fn start(mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
+    pub async fn start(&mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
         ctx.channel_id()
             .say(
                 &ctx.discord().http,
