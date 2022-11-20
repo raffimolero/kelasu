@@ -86,7 +86,7 @@ impl Game {
         let board_repr_len = "\
             ```\n\
             Energy: ########\n\
-               ╔─0─1─2─3─4─5─6─7─8─9─╗\n\
+               ╔-0-1-2-3-4-5-6-7-8-9-╗\n\
              0 ║[B|B(B)B B B B B B[B]║ 0\n\
              1 ║ B B B B B B B B B B ║ 1\n\
              2 ║ s   s  [ | | ]s   s ║ 2\n\
@@ -97,7 +97,7 @@ impl Game {
              7 ║ s   s         s   s ║ 7\n\
              8 ║ b b b b b b b b b b ║ 8\n\
              9 ║ b b b b b b b b b b ║ 9\n\
-               ╚─0─1─2─3─4─5─6─7─8─9─╝\n\
+               ╚-0-1-2-3-4-5-6-7-8-9-╝\n\
             ```"
         .len();
 
@@ -106,7 +106,7 @@ impl Game {
         for _ in 0..power {
             out.push('#');
         }
-        out.push_str("\n   ╔─0─1─2─3─4─5─6─7─8─9─╗\n");
+        out.push_str("\n   ╔-0-1-2-3-4-5-6-7-8-9-╗\n");
         for (y, row) in self.game.board.tiles.chunks(10).enumerate() {
             let row_selected = held_digit.map_or(false, |d| d == y as i8);
             let line = if row_selected { b"<=.=>" } else { b"     " }.map(|b| b as char);
@@ -135,7 +135,7 @@ impl Game {
             out.push(line[4]);
             out.push('\n');
         }
-        out.push_str("   ╚─0─1─2─3─4─5─6─7─8─9─╝\n```");
+        out.push_str("   ╚-0-1-2-3-4-5-6-7-8-9-╝\n```");
 
         out
     }
@@ -192,9 +192,10 @@ impl Game {
             })
             .await?;
 
+        let mut interactions = message.await_component_interactions(ctx.discord()).build();
         let mut interaction;
         let button = loop {
-            interaction = message.await_component_interaction(ctx.discord()).await;
+            interaction = interactions.next().await;
             break match &interaction {
                 Some(interaction) if interaction.user.id != player => {
                     respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
@@ -257,14 +258,13 @@ impl Game {
             })
             .await?;
 
-        let mut timeout = Duration::from_secs(3);
+        let mut interactions = message
+            .await_component_interactions(ctx.discord())
+            .timeout(Duration::from_secs(3))
+            .build();
         let mut interaction;
         let button = loop {
-            interaction = message
-                .await_component_interaction(ctx.discord())
-                .timeout(timeout)
-                .await;
-
+            interaction = interactions.next().await;
             break match &interaction {
                 Some(interaction) if interaction.user.id == opponent => {
                     respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
@@ -281,8 +281,10 @@ impl Game {
                 }
                 None if disabled => {
                     disabled = false;
-                    timeout = Duration::from_secs(60 * 3);
-
+                    interactions = message
+                        .await_component_interactions(ctx.discord())
+                        .timeout(Duration::from_secs(60 * 5))
+                        .build();
                     message
                         .edit(ctx.discord(), |m| m.components(|c| ui(c, disabled)))
                         .await?;
@@ -333,13 +335,13 @@ impl Game {
             .await?;
         let mut message = reply.message().await?.into_owned();
 
+        let mut interactions = message
+            .await_component_interactions(ctx.discord())
+            .timeout(Duration::from_secs(60 * 5))
+            .build();
         let mut interaction;
         let (response, p_move) = loop {
-            interaction = message
-                .await_component_interaction(ctx.discord())
-                .timeout(Duration::from_secs(60 * 5))
-                .await;
-
+            interaction = interactions.next().await;
             break match &interaction {
                 Some(interaction) => {
                     let from_player = interaction.user.id == player;
@@ -452,11 +454,9 @@ impl Game {
             .await_component_interactions(ctx.discord())
             .timeout(Duration::from_secs(60 * 5))
             .build();
-
         let mut interaction;
         let p_move = loop {
             interaction = interactions.next().await;
-
             let button = match &interaction {
                 Some(interaction) if interaction.user.id == player => {
                     interaction.defer(&ctx.discord().http).await?;

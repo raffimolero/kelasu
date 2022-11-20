@@ -137,8 +137,7 @@ impl Lobby {
 
         let mut interactions = message.await_component_interactions(ctx.discord()).build();
         while prefs.contains(&None) {
-            let Some(interaction) = interactions.next().await
-            else {
+            let Some(interaction) = interactions.next().await else {
                 ctx.say(format!(
                     "{}{}You didn't interact in time. Your preference has been set to 'Either'.",
                     if prefs[0].is_none() { format!("<@{}> ", players[0].0) } else { "".to_owned() },
@@ -146,7 +145,6 @@ impl Lobby {
                 )).await?;
                 break;
             };
-
             if !players.contains(&interaction.user.id) {
                 respond_ephemeral(ctx, &interaction, "You are not in that lobby.").await?;
                 continue;
