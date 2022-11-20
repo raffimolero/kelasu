@@ -5,7 +5,7 @@ use kelasu_game::{
 };
 use poise::{
     futures_util::StreamExt,
-    serenity_prelude::{self as serenity, ButtonStyle, UserId},
+    serenity_prelude::{self as serenity, ButtonStyle, Message, UserId},
 };
 use tokio::time::{sleep_until, Duration, Instant};
 
@@ -207,10 +207,21 @@ impl Game {
         ctx: Context<'_>,
         player: UserId,
     ) -> Result<bool, serenity::Error> {
-        let reply = ctx
-            .send(|b| {
-                b.content("Are you sure you want to resign?\n(Wait 3 seconds)")
-                    .components(|c| {
+        let reply = ctx.send(|b| b.content("loading...")).await?;
+
+        let mut message = reply.message().await?;
+        let message = message.to_mut();
+        let mut disabled = true;
+
+        async fn edit(
+            ctx: Context<'_>,
+            message: &mut Message,
+            disabled: bool,
+            content: &str,
+        ) -> Result<(), serenity::Error> {
+            message
+                .edit(ctx.discord(), |m| {
+                    m.content(content).components(|c| {
                         c.create_action_row(|r| {
                             r.create_button(|b| {
                                 b.custom_id("no")
@@ -223,75 +234,58 @@ impl Game {
                                     .label("Resign")
                                     .emoji('⚠')
                                     .style(ButtonStyle::Danger)
-                                    .disabled(true)
+                                    .disabled(disabled)
                             })
                         })
                     })
-            })
-            .await?;
+                })
+                .await
+        }
 
-        let mut message = reply.message().await?;
-        let message = message.to_mut();
-        let mut interactions = message
-            .await_component_interactions(ctx.discord())
-            .timeout(Duration::from_secs(60 * 5))
-            .build();
+        edit(ctx, message, disabled, "Are you sure you want to resign?").await?;
 
-        let mut interaction = None;
-        // HACK: leverages try_join's behavior on err to return whenever the hell the first block wants to, while the second block waits
-        // should probably use select instead
-        tokio::try_join!(
-            async {
-                let button = loop {
-                    (interaction, interactions) = interactions.into_future().await;
+        let mut timeout = Duration::from_secs(3);
+        let mut interaction;
+        let button = loop {
+            interaction = message
+                .await_component_interaction(ctx.discord())
+                .timeout(timeout)
+                .await;
 
-                    break match &interaction {
-                        Some(interaction) if interaction.user.id != player => {
-                            interaction
-                                .create_interaction_response(&ctx.discord().http, |r| {
-                                    r.interaction_response_data(|d| {
-                                        d.ephemeral(true).content("It's not your turn.")
-                                    })
-                                })
-                                .await
-                                .map_err(Err)?;
-                            continue;
-                        }
-                        Some(interaction) => interaction.data.custom_id.as_str(),
-                        None => "no",
-                    };
-                };
-                reply.delete(ctx).await.map_err(Err)?;
-                return Err::<(), _>(Ok(button == "resign"));
-            },
-            async {
-                sleep_until(Instant::now() + Duration::from_secs(3)).await;
-                message
-                    .edit(ctx.discord(), |m| {
-                        m.content("Are you still sure you want to resign?")
-                            .components(|c| {
-                                c.create_action_row(|r| {
-                                    r.create_button(|b| {
-                                        b.custom_id("no")
-                                            .label("No")
-                                            .emoji('⛔')
-                                            .style(ButtonStyle::Secondary)
-                                    })
-                                    .create_button(|b| {
-                                        b.custom_id("resign")
-                                            .label("Resign")
-                                            .emoji('⚠')
-                                            .style(ButtonStyle::Danger)
-                                    })
-                                })
+            break match &interaction {
+                Some(interaction) if interaction.user.id != player => {
+                    interaction
+                        .create_interaction_response(&ctx.discord().http, |r| {
+                            r.interaction_response_data(|d| {
+                                d.ephemeral(true).content("It's not your turn.")
                             })
-                    })
-                    .await
-                    .map_err(Err)?;
-                Ok(())
-            },
-        )
-        .unwrap_err()
+                        })
+                        .await?;
+                    continue;
+                }
+                Some(interaction) => interaction.data.custom_id.as_str(),
+                None if disabled => {
+                    disabled = false;
+                    timeout = Duration::from_secs(60 * 3);
+                    edit(
+                        ctx,
+                        message,
+                        disabled,
+                        "Are you still sure you want to resign?",
+                    )
+                    .await?;
+                    continue;
+                }
+                None => "no",
+            };
+        };
+
+        reply.delete(ctx).await?;
+        let resigned = button == "resign";
+        if resigned {
+            ctx.say(format!("<@{player}> resigned!")).await?;
+        }
+        Ok(resigned)
     }
 
     async fn offer_draw(
