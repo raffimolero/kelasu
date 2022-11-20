@@ -1,12 +1,12 @@
 use crate::lobby::{Lobby, LobbyId};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use kelasu_game::piece::Team;
-use lobby::LobbyStatus;
-use poise::serenity_prelude::{self as serenity, Mutex};
+use poise::serenity_prelude::{self as serenity, RwLock};
 
 mod game;
 mod lobby;
+mod util;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, Lobbies, Error>;
@@ -15,13 +15,13 @@ pub type Context<'a> = poise::Context<'a, Lobbies, Error>;
 pub struct Lobbies {
     // NOTE: this will be slower the more users there will be.
     // not much of a concern if it's not popular, though :P
-    lobbies: Mutex<HashMap<LobbyId, Lobby>>,
+    lobbies: RwLock<HashMap<LobbyId, Lobby>>,
 }
 
 impl Lobbies {
     fn new() -> Self {
         Self {
-            lobbies: Mutex::new(HashMap::new()),
+            lobbies: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -30,7 +30,7 @@ impl Lobbies {
 #[poise::command(slash_command, prefix_command)]
 async fn lobbies(ctx: Context<'_>) -> Result<(), Error> {
     // get all lobbies
-    let lobbies = ctx.data().lobbies.lock().await;
+    let lobbies = ctx.data().lobbies.read().await;
 
     // check if empty
     if lobbies.is_empty() {
@@ -66,12 +66,13 @@ async fn host(
     ctx: Context<'_>,
     #[description = "The name of the new lobby."] name: String,
 ) -> Result<(), Error> {
-    let mut lobbies = ctx.data().lobbies.lock().await;
+    let mut lobbies = ctx.data().lobbies.write().await;
     let response = if lobbies.contains_key(&name) {
         "That lobby already exists.".to_owned()
     } else {
-        lobbies.insert(name.clone(), Lobby::new(name.clone(), ctx.author().into()));
-        format!("Created lobby: {name}")
+        let id = Arc::new(name);
+        lobbies.insert(id.clone(), Lobby::new(id.clone(), ctx.author().into()));
+        format!("Created lobby: {id}")
     };
     ctx.say(response).await?;
     Ok(())
@@ -85,7 +86,7 @@ async fn join(
 ) -> Result<(), Error> {
     // try to pair up players
     let pair = {
-        let mut lobbies = ctx.data().lobbies.lock().await;
+        let mut lobbies = ctx.data().lobbies.write().await;
         let Some(lobby) = lobbies.get_mut(&name) else {
             ctx.say("That lobby does not exist.").await?;
             return Ok(());
@@ -100,8 +101,7 @@ async fn join(
                 .await?;
             return Ok(());
         }
-        lobby.players.push(player.into());
-        lobby.status = LobbyStatus::Starting;
+        lobby.add_player(ctx, player).await?;
         [lobby.players[0].id, lobby.players[1].id]
     }; // release the lock
 
@@ -110,10 +110,11 @@ async fn join(
 
     let game = {
         // find the lobby again
-        let mut lobbies = ctx.data().lobbies.lock().await;
+        let mut lobbies = ctx.data().lobbies.write().await;
         let Some(lobby) = lobbies
-        .get_mut(&name) else {
-            ctx.say(format!("This lobby ({name:?}) somehow no longer exists...")).await?;
+            .get_mut(&name)
+        else {
+            ctx.say(format!("This lobby ({name}) somehow no longer exists...")).await?;
             return Ok(())
         };
 
@@ -130,8 +131,7 @@ async fn join(
     ctx.say(format!("Game over!\nResult: {result}")).await?;
 
     // delete the lobby
-    let mut lobbies = ctx.data().lobbies.lock().await;
-    lobbies.remove(&name);
+    ctx.data().lobbies.write().await.remove(&name);
     Ok(())
 }
 

@@ -1,12 +1,13 @@
 use crate::{
     game::{Game, TeamPreference},
+    util::respond_ephemeral,
     Context,
 };
-use std::fmt::Display;
+use std::{fmt::Display, sync::Arc};
 
 use poise::serenity_prelude::{self as serenity, User, UserId};
 
-pub type LobbyId = String;
+pub type LobbyId = Arc<String>;
 
 #[derive(Debug)]
 pub enum LobbyStatus {
@@ -71,20 +72,43 @@ impl Lobby {
         }
     }
 
+    pub async fn add_player(
+        &mut self,
+        ctx: Context<'_>,
+        player: impl Into<UserInfo>,
+    ) -> Result<(), serenity::Error> {
+        ctx.say(format!("Joined `{}`", self.id)).await?;
+
+        self.players.push(player.into());
+        self.status = LobbyStatus::Starting;
+        Ok(())
+    }
+
     /// asks both players which sides they prefer.
     pub async fn get_user_teams(
         ctx: Context<'_>,
         players: [UserId; 2],
     ) -> Result<[TeamPreference; 2], serenity::Error> {
+        let mut prefs = [None, None];
+        fn prefs_format(prefs: &[Option<TeamPreference>; 2], players: [UserId; 2]) -> String {
+            format!(
+                "Which sides would you like to be on? You can change sides if your opponent hasn't decided.\n\
+                - <@{}>: {},\n\
+                - <@{}>: {}.\n",
+                players[0],
+                prefs[0]
+                    .as_ref()
+                    .map_or("Undecided".to_owned(), |p| format!("{p:?}")),
+                players[1],
+                prefs[1]
+                    .as_ref()
+                    .map_or("Undecided".to_owned(), |p| format!("{p:?}")),
+            )
+        }
+
         let reply = ctx
             .send(|m| {
-                m.content(format!(
-                    "Starting game!\n\
-                    <@{}> <@{}>\n\
-                    Which sides would you like to be on? You can change sides.",
-                    players[0], players[1]
-                ))
-                .components(|c| {
+                m.content(prefs_format(&prefs, players)).components(|c| {
                     c.create_action_row(|r| {
                         r.create_button(|b| {
                             b.custom_id("blue")
@@ -108,9 +132,7 @@ impl Lobby {
 
         let message = reply.message().await?;
 
-        let mut prefs = [None, None];
-
-        loop {
+        while prefs.contains(&None) {
             let Some(interaction) = &message
                 .await_component_interaction(ctx.discord())
                 .await
@@ -120,22 +142,14 @@ impl Lobby {
                     if prefs[0].is_none() { format!("<@{}> ", players[0].0) } else { "".to_owned() },
                     if prefs[1].is_none() { format!("<@{}> ", players[1].0) } else { "".to_owned() },
                 )).await?;
-                for p in prefs.iter_mut().filter(|p| p.is_none()) {
-                    *p = Some(TeamPreference::Either)
-                }
-                continue;
+                break;
             };
 
             if !players.contains(&interaction.user.id) {
-                interaction
-                    .create_interaction_response(&ctx.discord().http, |r| {
-                        r.interaction_response_data(|d| {
-                            d.ephemeral(true).content("You are not in that lobby.")
-                        })
-                    })
-                    .await?;
+                respond_ephemeral(ctx, interaction, "You are not in that lobby.").await?;
                 continue;
             }
+            interaction.defer(&ctx.discord().http).await?;
 
             let pref = match interaction.data.custom_id.as_str() {
                 "blue" => TeamPreference::Blue,
@@ -146,14 +160,16 @@ impl Lobby {
                     TeamPreference::Either
                 }
             };
-            let this = (players[1] == interaction.user.id) as usize;
-            prefs[this] = Some(pref);
+            let player = (players[1] == interaction.user.id) as usize;
+            prefs[player] = Some(pref);
 
-            if let [Some(a), Some(b)] = prefs {
-                reply.delete(ctx).await?;
-                return Ok([a, b]);
-            }
+            reply
+                .edit(ctx, |b| b.content(prefs_format(&prefs, players)))
+                .await?;
         }
+        reply.edit(ctx, |b| b.components(|c| c)).await?;
+
+        Ok(prefs.map(|p| p.unwrap_or_default()))
     }
 
     pub async fn start(
@@ -161,32 +177,23 @@ impl Lobby {
         ctx: Context<'_>,
         teams: [TeamPreference; 2],
     ) -> Result<Game, serenity::Error> {
+        ctx.say("*Starting lobby...*").await?;
+
         use TeamPreference::*;
         let mut pair = [self.players[0].id, self.players[1].id];
 
         if match teams {
-            [Either, Either] | [Blue, Blue] | [Red, Red] => rand::random(),
+            [Either, Either] | [Blue, Blue] | [Red, Red] => {
+                ctx.say("Coin toss!").await?;
+                rand::random()
+            }
             [Red | Either, Blue | Either] => true,
             [Blue | Either, Red | Either] => false,
         } {
             pair.swap(0, 1);
         }
 
-        let game = Game::new(pair[0], pair[1]);
-        ctx.channel_id()
-            .say(
-                &ctx.discord().http,
-                format!(
-                    "Game starting!\n\
-                    Lobby: {}\n\
-                    Blue: <@{}>,\n\
-                    Red: <@{}>.\n\
-                    Good luck, have fun!",
-                    self.id, game.blue, game.red,
-                ),
-            )
-            .await?;
-
+        let game = Game::new(self.id.clone(), pair[0], pair[1]);
         self.status = LobbyStatus::Ongoing;
         Ok(game)
     }

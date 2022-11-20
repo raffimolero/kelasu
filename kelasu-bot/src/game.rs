@@ -5,29 +5,32 @@ use kelasu_game::{
 };
 use poise::{
     futures_util::StreamExt,
-    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, Message, UserId},
+    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, UserId},
 };
-use tokio::time::{sleep_until, Duration, Instant};
+use tokio::time::Duration;
 
-use crate::Context;
+use crate::{lobby::LobbyId, util::respond_ephemeral, Context};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Default, Debug, PartialEq, Eq)]
 pub enum TeamPreference {
     Blue,
+    #[default]
     Either,
     Red,
 }
 
 #[derive(Debug)]
 pub struct Game {
+    pub lobby: LobbyId,
     pub blue: UserId,
     pub red: UserId,
     pub game: BoardGame,
 }
 
 impl Game {
-    pub fn new(blue: UserId, red: UserId) -> Self {
+    pub fn new(lobby: LobbyId, blue: UserId, red: UserId) -> Self {
         Self {
+            lobby,
             blue,
             red,
             game: BoardGame::new(),
@@ -176,13 +179,7 @@ impl Game {
                 .await;
             break match &interaction {
                 Some(interaction) if interaction.user.id != player => {
-                    interaction
-                        .create_interaction_response(&ctx.discord().http, |r| {
-                            r.interaction_response_data(|d| {
-                                d.ephemeral(true).content("It's not your turn.")
-                            })
-                        })
-                        .await?;
+                    respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
                     continue;
                 }
                 Some(interaction) => interaction.data.custom_id.as_str(),
@@ -206,6 +203,7 @@ impl Game {
         &self,
         ctx: Context<'_>,
         player: UserId,
+        opponent: UserId,
     ) -> Result<bool, serenity::Error> {
         fn ui(c: &mut CreateComponents, disabled: bool) -> &mut CreateComponents {
             c.create_action_row(|r| {
@@ -244,17 +242,18 @@ impl Game {
                 .await;
 
             break match &interaction {
-                Some(interaction) if interaction.user.id != player => {
-                    interaction
-                        .create_interaction_response(&ctx.discord().http, |r| {
-                            r.interaction_response_data(|d| {
-                                d.ephemeral(true).content("It's not your turn.")
-                            })
-                        })
+                Some(interaction) if interaction.user.id == opponent => {
+                    respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
+                    continue;
+                }
+                Some(interaction) if interaction.user.id == player => {
+                    interaction.data.custom_id.as_str()
+                }
+                Some(interaction) => {
+                    respond_ephemeral(ctx, interaction, "You're not a player in that lobby.")
                         .await?;
                     continue;
                 }
-                Some(interaction) => interaction.data.custom_id.as_str(),
                 None if disabled => {
                     disabled = false;
                     timeout = Duration::from_secs(60 * 3);
@@ -283,6 +282,7 @@ impl Game {
         &self,
         ctx: Context<'_>,
         player: UserId,
+        opponent: UserId,
     ) -> Result<VerifiedMove, serenity::Error> {
         let reply = ctx
             .send(|b| {
@@ -307,41 +307,42 @@ impl Game {
             .await?;
 
         let mut interaction;
-        let button = loop {
+        let (response, p_move) = loop {
             interaction = reply
                 .message()
                 .await?
                 .await_component_interaction(ctx.discord())
-                .author_id(player)
                 .timeout(Duration::from_secs(60 * 5))
                 .await;
 
-            reply.delete(ctx).await?;
-
             break match &interaction {
-                Some(interaction) if interaction.user.id != player => {
-                    interaction
-                        .create_interaction_response(&ctx.discord().http, |r| {
-                            r.interaction_response_data(|d| {
-                                d.ephemeral(true).content("It's not your turn.")
-                            })
-                        })
-                        .await?;
-                    continue;
+                Some(interaction) => {
+                    let from_player = interaction.user.id == player;
+                    let from_opponent = interaction.user.id == opponent;
+                    match interaction.data.custom_id.as_str() {
+                        "accept" if from_player => ("Accepted.", Move::Draw),
+                        "accept" if from_opponent => {
+                            respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
+                            continue;
+                        }
+                        "decline" if from_player => ("Declined.", Move::DeclineDraw),
+                        "decline" if from_opponent => ("Cancelled.", Move::DeclineDraw),
+                        _ => {
+                            respond_ephemeral(
+                                ctx,
+                                interaction,
+                                "You are not a player in this game.",
+                            )
+                            .await?;
+                            continue;
+                        }
+                    }
                 }
-                Some(interaction) => interaction.data.custom_id.as_str(),
-                None => "decline",
+                None => ("Timed out. Cancelling.", Move::DeclineDraw),
             };
         };
-
-        let p_move = match button {
-            "accept" => Move::Draw,
-            "decline" => {
-                ctx.say("Declined!").await?;
-                Move::DeclineDraw
-            }
-            _ => panic!("Invalid button ID!"),
-        };
+        reply.delete(ctx).await?;
+        ctx.say(response).await?;
 
         Ok(self.game.verify_move(p_move).unwrap())
     }
@@ -350,6 +351,7 @@ impl Game {
         &self,
         ctx: Context<'_>,
         player: UserId,
+        opponent: UserId,
         prev_turn: Team,
     ) -> Result<VerifiedMove, serenity::Error> {
         ctx.say(format!(
@@ -425,25 +427,23 @@ impl Game {
             .timeout(Duration::from_secs(60 * 5))
             .build();
 
-        loop {
+        let p_move = loop {
             let (interaction, rest) = interactions.into_future().await;
             interactions = rest;
 
             let button = match &interaction {
-                Some(interaction) => {
-                    if interaction.user.id == player {
-                        interaction.defer(&ctx.discord().http).await?;
-                    } else {
-                        interaction
-                            .create_interaction_response(&ctx.discord().http, |r| {
-                                r.interaction_response_data(|d| {
-                                    d.ephemeral(true).content("It's not your turn.")
-                                })
-                            })
-                            .await?;
-                        continue;
-                    }
+                Some(interaction) if interaction.user.id == player => {
+                    interaction.defer(&ctx.discord().http).await?;
                     interaction.data.custom_id.as_str()
+                }
+                Some(interaction) if interaction.user.id == opponent => {
+                    respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
+                    continue;
+                }
+                Some(interaction) => {
+                    respond_ephemeral(ctx, interaction, "You are not a player in this game.")
+                        .await?;
+                    continue;
                 }
                 None => {
                     ctx.say("Game Over! You didn't interact in time.").await?;
@@ -467,7 +467,7 @@ impl Game {
             let instruction = match button {
                 "timeout" => MakeMove(Move::Resign),
                 "resign" => {
-                    if self.confirm_resign(ctx, player).await? {
+                    if self.confirm_resign(ctx, player, opponent).await? {
                         MakeMove(Move::Resign)
                     } else {
                         Noop
@@ -507,23 +507,14 @@ impl Game {
                 Noop => {}
                 Say(message) => {
                     if let Some(interaction) = interaction {
-                        interaction
-                            .create_interaction_response(&ctx.discord().http, |r| {
-                                r.interaction_response_data(|m| m.ephemeral(true).content(message))
-                            })
-                            .await?;
+                        respond_ephemeral(ctx, &interaction, message).await?;
                     }
                 }
                 MakeMove(p_move) => match self.game.verify_move(p_move) {
-                    Ok(p_move) => return Ok(p_move),
+                    Ok(p_move) => break p_move,
                     Err(e) => {
                         if let Some(interaction) = interaction {
-                            interaction
-                                .create_interaction_response(&ctx.discord().http, |r| {
-                                    r.interaction_response_data(|m| {
-                                        m.ephemeral(true).content(format!("Invalid move: {e}"))
-                                    })
-                                })
+                            respond_ephemeral(ctx, &interaction, format!("Invalid move: {e}"))
                                 .await?;
                         }
                         reset(&mut held_digit, &mut positions);
@@ -555,26 +546,43 @@ impl Game {
                     m.content(self.board_repr(self.game.power, &positions, held_digit))
                 })
                 .await?;
-        }
+        };
+
+        reply.edit(ctx, |m| m.components(|c| c)).await?;
+        Ok(p_move)
     }
 
     pub async fn start(mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
-        let mut prev_turn = self.game.turn;
+        ctx.channel_id()
+            .say(
+                &ctx.discord().http,
+                format!(
+                    "**Game starting!**\n\
+                    Lobby: {}\n\
+                    Blue: <@{}>,\n\
+                    Red: <@{}>.\n\
+                    Good luck, have fun!",
+                    self.lobby, self.blue, self.red,
+                ),
+            )
+            .await?;
+
+        let mut prev_turn = !self.game.turn;
         loop {
             let draw_offered = match self.game.state {
                 GameState::Ongoing { draw_offered } => draw_offered,
                 GameState::Finished(winner) => return Ok(winner),
             };
 
-            let player = match self.game.turn {
-                Team::Blue => self.blue,
-                Team::Red => self.red,
+            let [player, opponent] = match self.game.turn {
+                Team::Blue => [self.blue, self.red],
+                Team::Red => [self.red, self.blue],
             };
 
             let p_move = if draw_offered {
-                self.offer_draw(ctx, player).await?
+                self.offer_draw(ctx, player, opponent).await?
             } else {
-                self.make_move(ctx, player, prev_turn).await?
+                self.make_move(ctx, player, opponent, prev_turn).await?
             };
 
             prev_turn = self.game.turn;
