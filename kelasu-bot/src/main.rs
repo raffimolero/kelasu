@@ -1,5 +1,5 @@
 use crate::lobby::{Lobby, LobbyId};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use kelasu_game::piece::Team;
 use lobby::LobbyStatus;
@@ -71,8 +71,9 @@ async fn host(
     let response = if lobbies.contains_key(&name) {
         "That lobby already exists.".to_owned()
     } else {
-        lobbies.insert(name.clone(), Lobby::new(name.clone(), ctx.author().into()));
-        format!("Created lobby: {name}")
+        let id = Arc::new(name);
+        lobbies.insert(id.clone(), Lobby::new(id.clone(), ctx.author().into()));
+        format!("Created lobby: {id}")
     };
     ctx.say(response).await?;
     Ok(())
@@ -101,8 +102,7 @@ async fn join(
                 .await?;
             return Ok(());
         }
-        lobby.players.push(player.into());
-        lobby.status = LobbyStatus::Starting;
+        lobby.add_player(ctx, player).await?;
         [lobby.players[0].id, lobby.players[1].id]
     }; // release the lock
 

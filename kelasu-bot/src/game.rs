@@ -5,11 +5,11 @@ use kelasu_game::{
 };
 use poise::{
     futures_util::StreamExt,
-    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, Message, UserId},
+    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, UserId},
 };
 use tokio::time::Duration;
 
-use crate::{util::respond_ephemeral, Context};
+use crate::{lobby::LobbyId, util::respond_ephemeral, Context};
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub enum TeamPreference {
@@ -21,14 +21,16 @@ pub enum TeamPreference {
 
 #[derive(Debug)]
 pub struct Game {
+    pub lobby: LobbyId,
     pub blue: UserId,
     pub red: UserId,
     pub game: BoardGame,
 }
 
 impl Game {
-    pub fn new(blue: UserId, red: UserId) -> Self {
+    pub fn new(lobby: LobbyId, blue: UserId, red: UserId) -> Self {
         Self {
+            lobby,
             blue,
             red,
             game: BoardGame::new(),
@@ -551,6 +553,20 @@ impl Game {
     }
 
     pub async fn start(mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
+        ctx.channel_id()
+            .say(
+                &ctx.discord().http,
+                format!(
+                    "Game starting!\n\
+                    Lobby: {}\n\
+                    Blue: <@{}>,\n\
+                    Red: <@{}>.\n\
+                    Good luck, have fun!",
+                    self.lobby, self.blue, self.red,
+                ),
+            )
+            .await?;
+
         let mut prev_turn = self.game.turn;
         loop {
             let draw_offered = match self.game.state {
