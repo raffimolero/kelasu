@@ -7,6 +7,7 @@ use poise::serenity_prelude::{self as serenity, Mutex};
 
 mod game;
 mod lobby;
+mod util;
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 pub type Context<'a> = poise::Context<'a, Lobbies, Error>;

@@ -1,5 +1,6 @@
 use crate::{
     game::{Game, TeamPreference},
+    util::respond_ephemeral,
     Context,
 };
 use std::fmt::Display;
@@ -109,8 +110,7 @@ impl Lobby {
         let message = reply.message().await?;
 
         let mut prefs = [None, None];
-
-        loop {
+        while prefs.contains(&None) {
             let Some(interaction) = &message
                 .await_component_interaction(ctx.discord())
                 .await
@@ -120,20 +120,11 @@ impl Lobby {
                     if prefs[0].is_none() { format!("<@{}> ", players[0].0) } else { "".to_owned() },
                     if prefs[1].is_none() { format!("<@{}> ", players[1].0) } else { "".to_owned() },
                 )).await?;
-                for p in prefs.iter_mut().filter(|p| p.is_none()) {
-                    *p = Some(TeamPreference::Either)
-                }
-                continue;
+                break;
             };
 
             if !players.contains(&interaction.user.id) {
-                interaction
-                    .create_interaction_response(&ctx.discord().http, |r| {
-                        r.interaction_response_data(|d| {
-                            d.ephemeral(true).content("You are not in that lobby.")
-                        })
-                    })
-                    .await?;
+                respond_ephemeral(ctx, interaction, "You are not in that lobby.").await?;
                 continue;
             }
 
@@ -148,12 +139,10 @@ impl Lobby {
             };
             let this = (players[1] == interaction.user.id) as usize;
             prefs[this] = Some(pref);
-
-            if let [Some(a), Some(b)] = prefs {
-                reply.delete(ctx).await?;
-                return Ok([a, b]);
-            }
         }
+        reply.delete(ctx).await?;
+
+        Ok(prefs.map(|p| p.unwrap_or_default()))
     }
 
     pub async fn start(
