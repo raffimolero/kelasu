@@ -79,7 +79,9 @@ impl Lobby {
         let reply = ctx
             .send(|m| {
                 m.content(format!(
-                    "<@{}> <@{}>\nWhich sides would you like to be on?\n||You can change sides if the interaction 'fails', but don't worry, your previous preference is recorded until the game begins.||",
+                    "Starting game!\n\
+                    <@{}> <@{}>\n\
+                    Which sides would you like to be on? You can change sides.",
                     players[0], players[1]
                 ))
                 .components(|c| {
@@ -113,7 +115,11 @@ impl Lobby {
                 .await_component_interaction(ctx.discord())
                 .await
             else {
-                ctx.say("You didn't interact in time. Your preference has been set to 'Either'.").await?;
+                ctx.say(format!(
+                    "{}{}You didn't interact in time. Your preference has been set to 'Either'.",
+                    if prefs[0].is_none() { format!("<@{}> ", players[0].0) } else { "".to_owned() },
+                    if prefs[1].is_none() { format!("<@{}> ", players[1].0) } else { "".to_owned() },
+                )).await?;
                 for p in prefs.iter_mut().filter(|p| p.is_none()) {
                     *p = Some(TeamPreference::Either)
                 }
@@ -124,7 +130,7 @@ impl Lobby {
                 interaction
                     .create_interaction_response(&ctx.discord().http, |r| {
                         r.interaction_response_data(|d| {
-                            d.ephemeral(true).content("It's not your turn.")
+                            d.ephemeral(true).content("You are not in that lobby.")
                         })
                     })
                     .await?;
