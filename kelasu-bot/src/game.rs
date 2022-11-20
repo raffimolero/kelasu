@@ -5,7 +5,7 @@ use kelasu_game::{
 };
 use poise::{
     futures_util::StreamExt,
-    serenity_prelude::{self as serenity, ButtonStyle, Message, UserId},
+    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, Message, UserId},
 };
 use tokio::time::{sleep_until, Duration, Instant};
 
@@ -207,42 +207,33 @@ impl Game {
         ctx: Context<'_>,
         player: UserId,
     ) -> Result<bool, serenity::Error> {
-        let reply = ctx.send(|b| b.content("loading...")).await?;
-
-        let mut message = reply.message().await?;
-        let message = message.to_mut();
-        let mut disabled = true;
-
-        async fn edit(
-            ctx: Context<'_>,
-            message: &mut Message,
-            disabled: bool,
-            content: &str,
-        ) -> Result<(), serenity::Error> {
-            message
-                .edit(ctx.discord(), |m| {
-                    m.content(content).components(|c| {
-                        c.create_action_row(|r| {
-                            r.create_button(|b| {
-                                b.custom_id("no")
-                                    .label("No")
-                                    .emoji('⛔')
-                                    .style(ButtonStyle::Secondary)
-                            })
-                            .create_button(|b| {
-                                b.custom_id("resign")
-                                    .label("Resign")
-                                    .emoji('⚠')
-                                    .style(ButtonStyle::Danger)
-                                    .disabled(disabled)
-                            })
-                        })
-                    })
+        fn ui(c: &mut CreateComponents, disabled: bool) -> &mut CreateComponents {
+            c.create_action_row(|r| {
+                r.create_button(|b| {
+                    b.custom_id("no")
+                        .label("No")
+                        .emoji('⛔')
+                        .style(ButtonStyle::Secondary)
                 })
-                .await
+                .create_button(|b| {
+                    b.custom_id("resign")
+                        .label("Resign")
+                        .emoji('⚠')
+                        .style(ButtonStyle::Danger)
+                        .disabled(disabled)
+                })
+            })
         }
 
-        edit(ctx, message, disabled, "Are you sure you want to resign?").await?;
+        let mut disabled = true;
+        let reply = ctx
+            .send(|b| {
+                b.content("Are you sure you want to resign?")
+                    .components(|c| ui(c, disabled))
+            })
+            .await?;
+        let mut message = reply.message().await?;
+        let message = message.to_mut();
 
         let mut timeout = Duration::from_secs(3);
         let mut interaction;
@@ -267,13 +258,13 @@ impl Game {
                 None if disabled => {
                     disabled = false;
                     timeout = Duration::from_secs(60 * 3);
-                    edit(
-                        ctx,
-                        message,
-                        disabled,
-                        "Are you still sure you want to resign?",
-                    )
-                    .await?;
+
+                    message
+                        .edit(ctx.discord(), |m| {
+                            m.content("Are you still sure you want to resign?")
+                                .components(|c| ui(c, disabled))
+                        })
+                        .await?;
                     continue;
                 }
                 None => "no",
