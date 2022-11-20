@@ -5,7 +5,10 @@ use crate::{
 };
 use std::{fmt::Display, sync::Arc};
 
-use poise::serenity_prelude::{self as serenity, User, UserId};
+use poise::{
+    futures_util::StreamExt,
+    serenity_prelude::{self as serenity, User, UserId},
+};
 
 pub type LobbyId = Arc<String>;
 
@@ -132,10 +135,9 @@ impl Lobby {
 
         let message = reply.message().await?;
 
+        let mut interactions = message.await_component_interactions(ctx.discord()).build();
         while prefs.contains(&None) {
-            let Some(interaction) = &message
-                .await_component_interaction(ctx.discord())
-                .await
+            let Some(interaction) = interactions.next().await
             else {
                 ctx.say(format!(
                     "{}{}You didn't interact in time. Your preference has been set to 'Either'.",
@@ -146,7 +148,7 @@ impl Lobby {
             };
 
             if !players.contains(&interaction.user.id) {
-                respond_ephemeral(ctx, interaction, "You are not in that lobby.").await?;
+                respond_ephemeral(ctx, &interaction, "You are not in that lobby.").await?;
                 continue;
             }
             interaction.defer(&ctx.discord().http).await?;

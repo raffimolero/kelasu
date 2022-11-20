@@ -5,11 +5,7 @@ use kelasu_game::{
 };
 use poise::{
     futures_util::StreamExt,
-    serenity_prelude::{
-        self as serenity, ButtonStyle, ComponentInteractionCollector, CreateComponents, Message,
-        UserId,
-    },
-    CreateReply,
+    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, Message, UserId},
 };
 use tokio::time::Duration;
 
@@ -70,13 +66,13 @@ impl Game {
                 fences[y][x + 1] = 0b_101;
             }
 
-            // if let Some(y) = held_digit {
-            //     for x in 0..11 {
-            //         if fences[y as usize][x] == 0 {
-            //             fences[y as usize][x] = 0b110;
-            //         }
-            //     }
-            // }
+            if let Some(y) = held_digit {
+                for x in 0..11 {
+                    if fences[y as usize][x] == 0 {
+                        fences[y as usize][x] = 0b110;
+                    }
+                }
+            }
 
             fences
         };
@@ -94,7 +90,7 @@ impl Game {
              0 ║[B|B(B)B B B B B B[B]║ 0\n\
              1 ║ B B B B B B B B B B ║ 1\n\
              2 ║ s   s  [ | | ]s   s ║ 2\n\
-            <3=║ . . . . . . . . . . ║=3>\n\
+            <3=║-.-.-.-.-.-.-.-.-.-.-║=3>\n\
              4 ║         : :         ║ 4\n\
              5 ║         : :         ║ 5\n\
              6 ║                     ║ 6\n\
@@ -106,12 +102,11 @@ impl Game {
         .len();
 
         let mut out = String::with_capacity(board_repr_len);
-        out.push_str("Energy: ");
+        out.push_str("```\nEnergy: ");
         for _ in 0..power {
             out.push('#');
         }
-        out.push_str("\n```\n   ╔─0─1─2─3─4─5─6─7─8─9─╗\n");
-
+        out.push_str("\n   ╔─0─1─2─3─4─5─6─7─8─9─╗\n");
         for (y, row) in self.game.board.tiles.chunks(10).enumerate() {
             let row_selected = held_digit.map_or(false, |d| d == y as i8);
             let line = if row_selected { b"<=.=>" } else { b"     " }.map(|b| b as char);
@@ -460,7 +455,7 @@ impl Game {
 
         let mut interaction;
         let p_move = loop {
-            (interaction, interactions) = interactions.into_future().await;
+            interaction = interactions.next().await;
 
             let button = match &interaction {
                 Some(interaction) if interaction.user.id == player => {
