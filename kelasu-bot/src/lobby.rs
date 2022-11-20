@@ -4,7 +4,7 @@ use crate::{
 };
 use std::fmt::Display;
 
-use poise::serenity_prelude::{self as serenity, ChannelId, User, UserId};
+use poise::serenity_prelude::{self as serenity, User, UserId};
 
 pub type LobbyId = String;
 
@@ -79,7 +79,9 @@ impl Lobby {
         let reply = ctx
             .send(|m| {
                 m.content(format!(
-                    "<@{}> <@{}>\nWhich sides would you like to be on?\n||You can change sides if the interaction 'fails', but don't worry, your previous preference is recorded until the game begins.||",
+                    "Starting game!\n\
+                    <@{}> <@{}>\n\
+                    Which sides would you like to be on? You can change sides.",
                     players[0], players[1]
                 ))
                 .components(|c| {
@@ -107,22 +109,33 @@ impl Lobby {
         let message = reply.message().await?;
 
         let mut prefs = [None, None];
-        loop {
-            if let [Some(a), Some(b)] = prefs {
-                reply.delete(ctx).await?;
-                return Ok([a, b]);
-            }
 
+        loop {
             let Some(interaction) = &message
                 .await_component_interaction(ctx.discord())
-                .filter(move |interaction| players.contains(&interaction.user.id))
-                .await else {
-                    ctx.say("You didn't interact in time. Your preference has been set to 'Either'.").await?;
-                    for p in prefs.iter_mut().filter(|p| p.is_none()) {
-                        *p = Some(TeamPreference::Either)
-                    }
-                    continue;
-                };
+                .await
+            else {
+                ctx.say(format!(
+                    "{}{}You didn't interact in time. Your preference has been set to 'Either'.",
+                    if prefs[0].is_none() { format!("<@{}> ", players[0].0) } else { "".to_owned() },
+                    if prefs[1].is_none() { format!("<@{}> ", players[1].0) } else { "".to_owned() },
+                )).await?;
+                for p in prefs.iter_mut().filter(|p| p.is_none()) {
+                    *p = Some(TeamPreference::Either)
+                }
+                continue;
+            };
+
+            if !players.contains(&interaction.user.id) {
+                interaction
+                    .create_interaction_response(&ctx.discord().http, |r| {
+                        r.interaction_response_data(|d| {
+                            d.ephemeral(true).content("You are not in that lobby.")
+                        })
+                    })
+                    .await?;
+                continue;
+            }
 
             let pref = match interaction.data.custom_id.as_str() {
                 "blue" => TeamPreference::Blue,
@@ -135,6 +148,11 @@ impl Lobby {
             };
             let this = (players[1] == interaction.user.id) as usize;
             prefs[this] = Some(pref);
+
+            if let [Some(a), Some(b)] = prefs {
+                reply.delete(ctx).await?;
+                return Ok([a, b]);
+            }
         }
     }
 

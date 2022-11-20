@@ -202,7 +202,7 @@ impl TryFrom<char> for Tile {
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         Ok(Self(match value {
-            '.' | ':' => None,
+            '.' | ':' | '_' => None,
             mut c => {
                 let team = if c.is_ascii_uppercase() {
                     c.make_ascii_lowercase();
@@ -229,7 +229,7 @@ impl TryFrom<char> for Tile {
 impl Icon for Tile {
     fn icon(&self) -> char {
         match self.0 {
-            None => '.',
+            None => ' ',
             Some(piece) => piece.icon(),
         }
     }

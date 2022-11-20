@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use kelasu_game::{
     board::{GameState, Move, Pos, VerifiedMove, Winner},
     piece::{Icon, PieceKind, Team},
@@ -7,8 +5,9 @@ use kelasu_game::{
 };
 use poise::{
     futures_util::StreamExt,
-    serenity_prelude::{self as serenity, ButtonStyle, UserId},
+    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, Message, UserId},
 };
+use tokio::time::{sleep_until, Duration, Instant};
 
 use crate::Context;
 
@@ -35,7 +34,7 @@ impl Game {
         }
     }
 
-    fn board_repr(&self, positions: &[Pos], held_digit: Option<i8>) -> String {
+    fn board_repr(&self, power: u8, positions: &[Pos], held_digit: Option<i8>) -> String {
         /*
         000: None
         001: Left
@@ -77,30 +76,37 @@ impl Game {
         }
 
         // this string is only for reference, it will not actually be displayed :P
-        let board_repr_len = "```\n\
-            0 1 2 3 4 5 6 7 8 9 \n\
-            0 [_|_(_)_ _ _ _ _ _[_]\n\
-            1  _ _ _ _ _ _ _ _ _ _ \n\
-            2  _ _ _ _[_[_[_]_ _ _ \n\
-            3 <_ _ _ _(_)_ _ _ _ _>\n\
-            4  _ _ _ _ _ _ _ _ _ _ \n\
-            5  _ _ _ _ _ _ _ _ _ _ \n\
-            6  _ _ _ _ _ _ _ _ _ _ \n\
-            7  _ _ _ _ _ _ _ _ _ _ \n\
-            8  _ _ _ _ _ _ _ _ _ _ \n\
-            9  _ _ _ _ _ _ _ _ _ _ \n\
+        let board_repr_len = "Power: 8\n\
+            ```\n\
+               0 1 2 3 4 5 6 7 8 9 \n\
+            0 [ | ( )           [ ]\n\
+            1                      \n\
+            2         [ | | ]      \n\
+            3 <       ( )         >\n\
+            4          : :         \n\
+            5          : :         \n\
+            6                      \n\
+            7                      \n\
+            8                      \n\
+            9                      \n\
             ```"
         .len();
 
         let mut board_repr = String::with_capacity(board_repr_len);
-        board_repr.push_str("```\n   0 1 2 3 4 5 6 7 8 9 \n");
+        board_repr.push_str("Power: ");
+        board_repr.push(char::from_digit(power.into(), 10).expect("IT'S OVER 9"));
+        board_repr.push_str("\n```\n   0 1 2 3 4 5 6 7 8 9 \n");
 
         for (y, row) in self.game.board.tiles.chunks(10).enumerate() {
             board_repr.push(char::from_digit(y as u32, 10).unwrap());
             board_repr.push(' ');
             for (x, tile) in row.iter().enumerate() {
                 board_repr.push(fence_icon(fences[y][x]));
-                board_repr.push(tile.icon());
+                if tile.0.is_none() && [[4, 4], [4, 5], [5, 4], [5, 5]].contains(&[y, x]) {
+                    board_repr.push(':');
+                } else {
+                    board_repr.push(tile.icon());
+                }
             }
             board_repr.push(fence_icon(fences[y][10]));
             board_repr.push('\n');
@@ -133,12 +139,12 @@ impl Game {
                                 for (kind, emoji) in row {
                                     r.create_button(|b| {
                                         let cost = kind.merge_costs().unwrap();
-                                        let disabled = piece_count < cost;
+                                        let disabled = piece_count != cost;
                                         b.custom_id(format!("{kind:?}"))
                                             .label(format!("{kind:?} ({cost})"))
                                             .emoji(*emoji)
                                             .style(if disabled {
-                                                ButtonStyle::Danger
+                                                ButtonStyle::Secondary
                                             } else {
                                                 ButtonStyle::Primary
                                             })
@@ -153,28 +159,37 @@ impl Game {
                                 b.custom_id("cancel")
                                     .label("Cancel")
                                     .emoji('⛔')
-                                    .style(ButtonStyle::Secondary)
+                                    .style(ButtonStyle::Danger)
                             })
                         })
                     })
             })
             .await?;
 
-        let interaction = reply
-            .message()
-            .await?
-            .await_component_interaction(ctx.discord())
-            .author_id(player)
-            .timeout(Duration::from_secs(60 * 5))
-            .await;
-
-        reply.delete(ctx).await?;
-
-        let button = match &interaction {
-            Some(interaction) => interaction.data.custom_id.as_str(),
-            None => "cancel",
+        let mut interaction;
+        let button = loop {
+            interaction = reply
+                .message()
+                .await?
+                .await_component_interaction(ctx.discord())
+                .timeout(Duration::from_secs(60 * 5))
+                .await;
+            break match &interaction {
+                Some(interaction) if interaction.user.id != player => {
+                    interaction
+                        .create_interaction_response(&ctx.discord().http, |r| {
+                            r.interaction_response_data(|d| {
+                                d.ephemeral(true).content("It's not your turn.")
+                            })
+                        })
+                        .await?;
+                    continue;
+                }
+                Some(interaction) => interaction.data.custom_id.as_str(),
+                None => "cancel",
+            };
         };
-
+        reply.delete(ctx).await?;
         Ok(Some(match button {
             "cancel" => return Ok(None),
             "Warrior" => PieceKind::Warrior,
@@ -187,100 +202,252 @@ impl Game {
         }))
     }
 
-    async fn make_move(
+    async fn confirm_resign(
+        &self,
+        ctx: Context<'_>,
+        player: UserId,
+    ) -> Result<bool, serenity::Error> {
+        fn ui(c: &mut CreateComponents, disabled: bool) -> &mut CreateComponents {
+            c.create_action_row(|r| {
+                r.create_button(|b| {
+                    b.custom_id("no")
+                        .label("No")
+                        .emoji('⛔')
+                        .style(ButtonStyle::Secondary)
+                })
+                .create_button(|b| {
+                    b.custom_id("resign")
+                        .label("Resign")
+                        .emoji('⚠')
+                        .style(ButtonStyle::Danger)
+                        .disabled(disabled)
+                })
+            })
+        }
+
+        let mut disabled = true;
+        let reply = ctx
+            .send(|b| {
+                b.content("Are you sure you want to resign?")
+                    .components(|c| ui(c, disabled))
+            })
+            .await?;
+        let mut message = reply.message().await?;
+        let message = message.to_mut();
+
+        let mut timeout = Duration::from_secs(3);
+        let mut interaction;
+        let button = loop {
+            interaction = message
+                .await_component_interaction(ctx.discord())
+                .timeout(timeout)
+                .await;
+
+            break match &interaction {
+                Some(interaction) if interaction.user.id != player => {
+                    interaction
+                        .create_interaction_response(&ctx.discord().http, |r| {
+                            r.interaction_response_data(|d| {
+                                d.ephemeral(true).content("It's not your turn.")
+                            })
+                        })
+                        .await?;
+                    continue;
+                }
+                Some(interaction) => interaction.data.custom_id.as_str(),
+                None if disabled => {
+                    disabled = false;
+                    timeout = Duration::from_secs(60 * 3);
+
+                    message
+                        .edit(ctx.discord(), |m| {
+                            m.content("Are you still sure you want to resign?")
+                                .components(|c| ui(c, disabled))
+                        })
+                        .await?;
+                    continue;
+                }
+                None => "no",
+            };
+        };
+
+        reply.delete(ctx).await?;
+        let resigned = button == "resign";
+        if resigned {
+            ctx.say(format!("<@{player}> resigned!")).await?;
+        }
+        Ok(resigned)
+    }
+
+    async fn offer_draw(
         &self,
         ctx: Context<'_>,
         player: UserId,
     ) -> Result<VerifiedMove, serenity::Error> {
         let reply = ctx
             .send(|b| {
-                b.content("loading...").components(|c| {
-                    c.create_action_row(|r| {
-                        (0..5).into_iter().fold(r, |r, i| {
+                b.content(format!("<@{player}> Your opponent is offering a draw."))
+                    .components(|c| {
+                        c.create_action_row(|r| {
                             r.create_button(|b| {
-                                b.custom_id(i).label(i).style(ButtonStyle::Secondary)
+                                b.custom_id("accept")
+                                    .label("Accept")
+                                    .emoji('🤝')
+                                    .style(ButtonStyle::Secondary)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("decline")
+                                    .label("Decline")
+                                    .emoji('⛔')
+                                    .style(ButtonStyle::Primary)
                             })
                         })
                     })
-                    .create_action_row(|r| {
-                        (5..10).fold(r, |r, i| {
+            })
+            .await?;
+
+        let mut interaction;
+        let button = loop {
+            interaction = reply
+                .message()
+                .await?
+                .await_component_interaction(ctx.discord())
+                .author_id(player)
+                .timeout(Duration::from_secs(60 * 5))
+                .await;
+
+            reply.delete(ctx).await?;
+
+            break match &interaction {
+                Some(interaction) if interaction.user.id != player => {
+                    interaction
+                        .create_interaction_response(&ctx.discord().http, |r| {
+                            r.interaction_response_data(|d| {
+                                d.ephemeral(true).content("It's not your turn.")
+                            })
+                        })
+                        .await?;
+                    continue;
+                }
+                Some(interaction) => interaction.data.custom_id.as_str(),
+                None => "decline",
+            };
+        };
+
+        let p_move = match button {
+            "accept" => Move::Draw,
+            "decline" => {
+                ctx.say("Declined!").await?;
+                Move::DeclineDraw
+            }
+            _ => panic!("Invalid button ID!"),
+        };
+
+        Ok(self.game.verify_move(p_move).unwrap())
+    }
+
+    async fn make_move(
+        &self,
+        ctx: Context<'_>,
+        player: UserId,
+        prev_turn: Team,
+    ) -> Result<VerifiedMove, serenity::Error> {
+        ctx.say(format!(
+            "It's {} <@{player}>'s turn. You have 5 minutes to move.",
+            if prev_turn == self.game.turn {
+                "still"
+            } else {
+                "now"
+            }
+        ))
+        .await?;
+
+        let mut held_digit = None;
+        let mut positions: Vec<Pos> = Vec::with_capacity(10);
+        let reply = ctx
+            .send(|b| {
+                b.content(self.board_repr(self.game.power, &positions, held_digit))
+                    .components(|c| {
+                        c.create_action_row(|r| {
+                            (0..5).into_iter().fold(r, |r, i| {
+                                r.create_button(|b| {
+                                    b.custom_id(i).label(i).style(ButtonStyle::Secondary)
+                                })
+                            })
+                        })
+                        .create_action_row(|r| {
+                            (5..10).fold(r, |r, i| {
+                                r.create_button(|b| {
+                                    b.custom_id(i).label(i).style(ButtonStyle::Secondary)
+                                })
+                            })
+                        })
+                        .create_action_row(|r| {
                             r.create_button(|b| {
-                                b.custom_id(i).label(i).style(ButtonStyle::Secondary)
+                                b.custom_id("resign")
+                                    .label("Resign")
+                                    .emoji('⚠')
+                                    .style(ButtonStyle::Danger)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("draw")
+                                    .label("Draw")
+                                    .emoji('🤝')
+                                    .style(ButtonStyle::Primary)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("reset")
+                                    .label("Reset")
+                                    .emoji('🔄')
+                                    .style(ButtonStyle::Primary)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("move")
+                                    .label("Move")
+                                    .emoji('♐')
+                                    .style(ButtonStyle::Success)
+                            })
+                            .create_button(|b| {
+                                b.custom_id("merge")
+                                    .label("Merge")
+                                    .emoji('♻')
+                                    .style(ButtonStyle::Success)
                             })
                         })
                     })
-                    .create_action_row(|r| {
-                        r.create_button(|b| {
-                            b.custom_id("resign")
-                                .label("Resign")
-                                .emoji('⚠')
-                                .style(ButtonStyle::Danger)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("draw")
-                                .label("Draw")
-                                .emoji('🤝')
-                                .style(ButtonStyle::Primary)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("reset")
-                                .label("Reset")
-                                .emoji('🔄')
-                                .style(ButtonStyle::Primary)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("move")
-                                .label("Move")
-                                .emoji('♐')
-                                .style(ButtonStyle::Success)
-                        })
-                        .create_button(|b| {
-                            b.custom_id("merge")
-                                .label("Merge")
-                                .emoji('♻')
-                                .style(ButtonStyle::Success)
-                        })
-                    })
-                })
             })
             .await?;
 
         let mut message = reply.message().await?.into_owned();
 
-        let mut held_digit = None;
-        let mut positions: Vec<Pos> = Vec::with_capacity(10);
         let mut interactions = message
             .await_component_interactions(ctx.discord())
             .timeout(Duration::from_secs(60 * 5))
-            .author_id(player)
             .build();
 
         loop {
-            message
-                .edit(&ctx.discord().http, |m| {
-                    m.content(self.board_repr(&positions, held_digit))
-                })
-                .await?;
-
             let (interaction, rest) = interactions.into_future().await;
             interactions = rest;
 
             let button = match &interaction {
                 Some(interaction) => {
-                    // HACK: create and delete a response so discord knows something happened
-                    interaction
-                        .create_interaction_response(&ctx.discord().http, |b| {
-                            b.interaction_response_data(|r| r.ephemeral(true).content("processed."))
-                        })
-                        .await?;
-                    interaction
-                        .delete_original_interaction_response(&ctx.discord().http)
-                        .await?;
+                    if interaction.user.id == player {
+                        interaction.defer(&ctx.discord().http).await?;
+                    } else {
+                        interaction
+                            .create_interaction_response(&ctx.discord().http, |r| {
+                                r.interaction_response_data(|d| {
+                                    d.ephemeral(true).content("It's not your turn.")
+                                })
+                            })
+                            .await?;
+                        continue;
+                    }
                     interaction.data.custom_id.as_str()
                 }
                 None => {
                     ctx.say("Game Over! You didn't interact in time.").await?;
-                    "resign"
+                    "timeout"
                 }
             };
 
@@ -298,7 +465,14 @@ impl Game {
             }
             use Instruction::*;
             let instruction = match button {
-                "resign" => MakeMove(Move::Resign),
+                "timeout" => MakeMove(Move::Resign),
+                "resign" => {
+                    if self.confirm_resign(ctx, player).await? {
+                        MakeMove(Move::Resign)
+                    } else {
+                        Noop
+                    }
+                }
                 "draw" => MakeMove(Move::Draw),
                 "reset" => Reset,
                 "move" => match positions.as_slice() {
@@ -332,12 +506,26 @@ impl Game {
             match instruction {
                 Noop => {}
                 Say(message) => {
-                    ctx.say(message).await?;
+                    if let Some(interaction) = interaction {
+                        interaction
+                            .create_interaction_response(&ctx.discord().http, |r| {
+                                r.interaction_response_data(|m| m.ephemeral(true).content(message))
+                            })
+                            .await?;
+                    }
                 }
                 MakeMove(p_move) => match self.game.verify_move(p_move) {
                     Ok(p_move) => return Ok(p_move),
                     Err(e) => {
-                        ctx.say(format!("Invalid move: {e}")).await?;
+                        if let Some(interaction) = interaction {
+                            interaction
+                                .create_interaction_response(&ctx.discord().http, |r| {
+                                    r.interaction_response_data(|m| {
+                                        m.ephemeral(true).content(format!("Invalid move: {e}"))
+                                    })
+                                })
+                                .await?;
+                        }
                         reset(&mut held_digit, &mut positions);
                     }
                 },
@@ -345,9 +533,15 @@ impl Game {
                     Some(tens) => {
                         let cursor = Pos(tens * 10 + num);
                         match positions.iter().position(|p| *p == cursor) {
-                            Some(0) => reset(&mut held_digit, &mut positions),
                             Some(idx) => {
-                                positions.remove(idx);
+                                if idx == positions.len() - 1 {
+                                    // selecting the same thing twice pops it
+                                    positions.pop();
+                                } else {
+                                    // selecting once will change the selection
+                                    let cursor = positions.remove(idx);
+                                    positions.push(cursor);
+                                }
                             }
                             None => positions.push(cursor),
                         }
@@ -356,58 +550,12 @@ impl Game {
                 },
                 Reset => reset(&mut held_digit, &mut positions),
             }
+            message
+                .edit(&ctx.discord().http, |m| {
+                    m.content(self.board_repr(self.game.power, &positions, held_digit))
+                })
+                .await?;
         }
-    }
-
-    async fn offer_draw(
-        &self,
-        ctx: Context<'_>,
-        player: UserId,
-    ) -> Result<VerifiedMove, serenity::Error> {
-        let reply = ctx
-            .send(|b| {
-                b.content("Your opponent is offering a draw.")
-                    .components(|c| {
-                        c.create_action_row(|r| {
-                            r.create_button(|b| {
-                                b.custom_id("accept")
-                                    .label("Accept")
-                                    .emoji('🤝')
-                                    .style(ButtonStyle::Secondary)
-                            })
-                            .create_button(|b| {
-                                b.custom_id("decline")
-                                    .label("Decline")
-                                    .emoji('⛔')
-                                    .style(ButtonStyle::Primary)
-                            })
-                        })
-                    })
-            })
-            .await?;
-
-        let interaction = reply
-            .message()
-            .await?
-            .await_component_interaction(ctx.discord())
-            .author_id(player)
-            .timeout(Duration::from_secs(60 * 5))
-            .await;
-
-        reply.delete(ctx).await?;
-
-        let button = match &interaction {
-            Some(interaction) => interaction.data.custom_id.as_str(),
-            None => "decline",
-        };
-
-        let p_move = match button {
-            "accept" => Move::Draw,
-            "decline" => Move::DeclineDraw,
-            _ => panic!("Invalid button ID!"),
-        };
-
-        Ok(self.game.verify_move(p_move).unwrap())
     }
 
     pub async fn start(mut self, ctx: Context<'_>) -> Result<Winner, serenity::Error> {
@@ -422,24 +570,15 @@ impl Game {
                 Team::Blue => self.blue,
                 Team::Red => self.red,
             };
-            ctx.say(format!(
-                "It's {} <@{player}>'s turn. You have 5 minutes to move.",
-                if prev_turn != self.game.turn {
-                    "now"
-                } else {
-                    "still"
-                }
-            ))
-            .await?;
 
             let p_move = if draw_offered {
                 self.offer_draw(ctx, player).await?
             } else {
-                self.make_move(ctx, player).await?
+                self.make_move(ctx, player, prev_turn).await?
             };
 
-            self.game.make_move(p_move);
             prev_turn = self.game.turn;
+            self.game.make_move(p_move);
         }
     }
 }
