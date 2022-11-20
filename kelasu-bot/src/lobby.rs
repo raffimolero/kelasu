@@ -107,22 +107,29 @@ impl Lobby {
         let message = reply.message().await?;
 
         let mut prefs = [None, None];
-        loop {
-            if let [Some(a), Some(b)] = prefs {
-                reply.delete(ctx).await?;
-                return Ok([a, b]);
-            }
 
+        loop {
             let Some(interaction) = &message
                 .await_component_interaction(ctx.discord())
-                .filter(move |interaction| players.contains(&interaction.user.id))
-                .await else {
-                    ctx.say("You didn't interact in time. Your preference has been set to 'Either'.").await?;
-                    for p in prefs.iter_mut().filter(|p| p.is_none()) {
-                        *p = Some(TeamPreference::Either)
-                    }
-                    continue;
-                };
+                .await
+            else {
+                ctx.say("You didn't interact in time. Your preference has been set to 'Either'.").await?;
+                for p in prefs.iter_mut().filter(|p| p.is_none()) {
+                    *p = Some(TeamPreference::Either)
+                }
+                continue;
+            };
+
+            if !players.contains(&interaction.user.id) {
+                interaction
+                    .create_interaction_response(&ctx.discord().http, |r| {
+                        r.interaction_response_data(|d| {
+                            d.ephemeral(true).content("It's not your turn.")
+                        })
+                    })
+                    .await?;
+                continue;
+            }
 
             let pref = match interaction.data.custom_id.as_str() {
                 "blue" => TeamPreference::Blue,
@@ -135,6 +142,11 @@ impl Lobby {
             };
             let this = (players[1] == interaction.user.id) as usize;
             prefs[this] = Some(pref);
+
+            if let [Some(a), Some(b)] = prefs {
+                reply.delete(ctx).await?;
+                return Ok([a, b]);
+            }
         }
     }
 
