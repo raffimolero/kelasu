@@ -139,8 +139,11 @@ async fn join(
         ctx.say(format!("Error: {e}")).await?;
     };
     let mut lobbies = ctx.data().lobbies.write().await;
-    if let Some(lobby) = lobbies.remove(&name) {
-        ctx.say(format!("Deleted lobby: {lobby:?}")).await?;
+    if let Some(_lobby) = lobbies.remove(&name) {
+        ctx.say(format!("Closed `{name}`.")).await?;
+    } else {
+        ctx.say(format!("The lobby `{name}` just disappeared?"))
+            .await?;
     }
     result
 }

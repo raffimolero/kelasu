@@ -196,6 +196,7 @@ impl Game {
         let mut interaction;
         let button = loop {
             interaction = interactions.next().await;
+            dbg!("interaction received");
             break match &interaction {
                 Some(interaction) if interaction.user.id != player => {
                     respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
@@ -266,6 +267,7 @@ impl Game {
         let mut interaction;
         let button = loop {
             interaction = interactions.next().await;
+            dbg!("interaction received");
             break match &interaction {
                 Some(interaction) if interaction.user.id == player => {
                     dbg!("player move");
@@ -347,6 +349,7 @@ impl Game {
         let mut interaction;
         let (response, p_move) = loop {
             interaction = interactions.next().await;
+            dbg!("interaction received");
             break match &interaction {
                 Some(interaction) => {
                     let from_player = interaction.user.id == player;
@@ -463,6 +466,7 @@ impl Game {
         let mut interaction;
         let p_move = loop {
             interaction = interactions.next().await;
+            dbg!("interaction received");
             let button = match &interaction {
                 Some(interaction) if interaction.user.id == player => {
                     dbg!("player move");
