@@ -144,6 +144,7 @@ async fn join(
     if let Some(_lobby) = lobbies.remove(&name) {
         ctx.say(format!("Closed lobby: `{name}`.")).await?;
     } else {
+        info!("tried to delete lobby {name}");
         // ctx.say(format!("The lobby `{name}` just disappeared?"))
         //     .await?;
     }

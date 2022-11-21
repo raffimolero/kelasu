@@ -213,6 +213,8 @@ pub enum InvalidMove {
     EmptyTile,
     #[error("You cannot move your opponent's pieces.")]
     NotYourPiece,
+    #[error("You cannot move the same piece twice.")]
+    DoubleMove,
     #[error("That piece cannot move that way: {0}")]
     InvalidPieceMove(#[from] InvalidPieceMove),
     #[error("Merging that piece requires exactly {0} blanks, including the destination piece.")]
@@ -360,6 +362,7 @@ pub struct Game {
     pub turn: Team,
     pub power: u8,
     pub board: Board,
+    pub locked_tiles: Vec<Pos>,
     position_tracker: HashMap<(Team, Board), usize>,
     stagnation: u8,
 }
@@ -376,9 +379,10 @@ impl Game {
             },
             turn,
             power: board.stone_count(turn),
-            stagnation: 0,
             board,
+            locked_tiles: Vec::with_capacity(8),
             position_tracker: HashMap::new(),
+            stagnation: 0,
         }
     }
 
@@ -386,13 +390,18 @@ impl Game {
         matches!(self.state, GameState::Ongoing { .. })
     }
 
-    pub fn verify_piece_move(
+    pub fn verify_move(
         board: &Board,
         turn: Team,
+        locked_tiles: &[Pos],
         from: Pos,
         to: Pos,
     ) -> Result<(), InvalidMove> {
         // we don't have to check for power because it should immediately switch turns then
+
+        if [from, to].iter().any(|p| locked_tiles.contains(p)) {
+            return Err(InvalidMove::DoubleMove);
+        }
 
         let Tile(Some(piece)) = board[from] else {
             return Err(InvalidMove::EmptyTile);
@@ -444,13 +453,21 @@ impl Game {
     /// the number of pieces required for the merge kind is checked during parsing
     ///
     /// juuust in case people specify 10,000 different pieces
-    pub fn verify_merge(board: &Board, turn: Team, pieces: &mut [Pos]) -> Result<(), InvalidMove> {
+    pub fn verify_merge(
+        board: &Board,
+        turn: Team,
+        locked_tiles: &[Pos],
+        pieces: &mut [Pos],
+    ) -> Result<(), InvalidMove> {
         let home_rows = match turn {
             Team::Blue => 00..20,
             Team::Red => 90..100,
         };
 
         for p in pieces.iter() {
+            if locked_tiles.contains(p) {
+                return Err(InvalidMove::DoubleMove);
+            }
             let Some(piece) = board[*p].0 else {
                 return Err(InvalidMove::EmptyTile);
             };
@@ -471,11 +488,11 @@ impl Game {
     }
 
     pub fn verify_move_str(&self, input: &str) -> Result<VerifiedMove, InvalidMoveCommand> {
-        self.verify_move(input.parse()?)
+        self.verify_action(input.parse()?)
             .map_err(InvalidMoveCommand::from)
     }
 
-    pub fn verify_move(&self, mut p_move: Move) -> Result<VerifiedMove, InvalidMove> {
+    pub fn verify_action(&self, mut p_move: Move) -> Result<VerifiedMove, InvalidMove> {
         let GameState::Ongoing { draw_offered, .. } = self.state else {
             return Err(InvalidMove::GameOver);
         };
@@ -484,8 +501,12 @@ impl Game {
             Move::DeclineDraw if draw_offered => Ok(()),
             Move::DeclineDraw => Err(InvalidMove::DrawNotOffered),
             _ if draw_offered => Err(InvalidMove::DrawOffered),
-            Move::Move { from, to } => Self::verify_piece_move(&self.board, self.turn, *from, *to),
-            Move::Merge { kind: _, pieces } => Self::verify_merge(&self.board, self.turn, pieces),
+            Move::Move { from, to } => {
+                Self::verify_move(&self.board, self.turn, &self.locked_tiles, *from, *to)
+            }
+            Move::Merge { kind: _, pieces } => {
+                Self::verify_merge(&self.board, self.turn, &self.locked_tiles, pieces)
+            }
         }
         .map(|_| VerifiedMove(p_move))
     }
@@ -528,6 +549,7 @@ impl Game {
                     self.board[to].0.as_mut().unwrap().team = self.turn;
                 } else {
                     self.board[to] = self.board[from];
+                    self.locked_tiles.push(to);
                 }
                 self.board[from].0 = None;
             }
@@ -581,6 +603,7 @@ impl Game {
         }
 
         self.power = enemy_stone_count;
+        self.locked_tiles.clear();
         if self.turn == Team::Blue {
             self.stagnation += 1;
             if self.stagnation > 64 {

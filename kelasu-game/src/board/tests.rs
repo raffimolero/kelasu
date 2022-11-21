@@ -20,7 +20,7 @@ pub(crate) fn test_diplomat() {
         .unwrap(),
     );
     game.make_move(
-        game.verify_move(Move::Move {
+        game.verify_action(Move::Move {
             from: Pos(30),
             to: Pos(21),
         })
@@ -43,13 +43,13 @@ pub(crate) fn test_diplomat() {
         .parse()
         .unwrap()
     );
-    game.verify_move(Move::Move {
+    game.verify_action(Move::Move {
         from: Pos(77),
         to: Pos(74),
     })
     .unwrap_err();
     game.make_move(
-        game.verify_move(Move::Move {
+        game.verify_action(Move::Move {
             from: Pos(77),
             to: Pos(47),
         })
@@ -93,7 +93,7 @@ pub(crate) fn test_reverse_move() {
         .parse()
         .unwrap(),
     );
-    game.verify_move(Move::Move {
+    game.verify_action(Move::Move {
         from: Pos(00),
         to: Pos(10),
     })
@@ -120,7 +120,7 @@ pub(crate) fn test_recall() {
         .unwrap(),
     );
     game.make_move(
-        game.verify_move(Move::Move {
+        game.verify_action(Move::Move {
             from: Pos(00),
             to: Pos(90),
         })
@@ -167,14 +167,14 @@ pub(crate) fn test_repetition() {
     // go back and forth 3 times
     for _ in 0..3 {
         game.make_move(
-            game.verify_move(Move::Move {
+            game.verify_action(Move::Move {
                 from: Pos(00),
                 to: Pos(01),
             })
             .unwrap(),
         );
         game.make_move(
-            game.verify_move(Move::Move {
+            game.verify_action(Move::Move {
                 from: Pos(90),
                 to: Pos(91),
             })
@@ -182,14 +182,14 @@ pub(crate) fn test_repetition() {
         );
 
         game.make_move(
-            game.verify_move(Move::Move {
+            game.verify_action(Move::Move {
                 from: Pos(01),
                 to: Pos(00),
             })
             .unwrap(),
         );
         game.make_move(
-            game.verify_move(Move::Move {
+            game.verify_action(Move::Move {
                 from: Pos(91),
                 to: Pos(90),
             })
@@ -198,7 +198,7 @@ pub(crate) fn test_repetition() {
     }
     // go back one more time
     game.make_move(
-        game.verify_move(Move::Move {
+        game.verify_action(Move::Move {
             from: Pos(00),
             to: Pos(01),
         })
