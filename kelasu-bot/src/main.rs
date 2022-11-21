@@ -78,16 +78,11 @@ async fn host(
     Ok(())
 }
 
-/// Joins a lobby.
-#[poise::command(slash_command, prefix_command)]
-async fn join(
-    ctx: Context<'_>,
-    #[description = "The name of the lobby to join."] name: String,
-) -> Result<(), Error> {
+async fn try_join(ctx: Context<'_>, name: &String) -> Result<(), Error> {
     // try to pair up players
     let pair = {
         let mut lobbies = ctx.data().lobbies.write().await;
-        let Some(lobby) = lobbies.get_mut(&name) else {
+        let Some(lobby) = lobbies.get_mut(&*name) else {
             ctx.say("That lobby does not exist.").await?;
             return Ok(());
         };
@@ -112,7 +107,7 @@ async fn join(
         // find the lobby again
         let mut lobbies = ctx.data().lobbies.write().await;
         let Some(lobby) = lobbies
-            .get_mut(&name)
+            .get_mut(&*name)
         else {
             ctx.say(format!("This lobby ({name}) somehow no longer exists...")).await?;
             return Ok(())
@@ -130,9 +125,24 @@ async fn join(
     };
     ctx.say(format!("Game over!\nResult: {result}")).await?;
 
-    // delete the lobby
-    ctx.data().lobbies.write().await.remove(&name);
     Ok(())
+}
+
+/// Joins a lobby.
+#[poise::command(slash_command, prefix_command)]
+async fn join(
+    ctx: Context<'_>,
+    #[description = "The name of the lobby to join."] name: String,
+) -> Result<(), Error> {
+    let result = try_join(ctx, &name).await;
+    if let Err(e) = &result {
+        ctx.say(format!("Error: {e}")).await?;
+    };
+    let mut lobbies = ctx.data().lobbies.write().await;
+    if let Some(lobby) = lobbies.remove(&name) {
+        ctx.say(format!("Deleted lobby: {lobby:?}")).await?;
+    }
+    result
 }
 
 #[poise::command(prefix_command)]

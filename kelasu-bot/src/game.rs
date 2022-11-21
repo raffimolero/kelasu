@@ -202,6 +202,7 @@ impl Game {
                     continue;
                 }
                 Some(interaction) => {
+                    dbg!("Deferring");
                     interaction.defer(&ctx.discord().http).await?;
                     interaction.data.custom_id.as_str()
                 }
@@ -266,15 +267,19 @@ impl Game {
         let button = loop {
             interaction = interactions.next().await;
             break match &interaction {
-                Some(interaction) if interaction.user.id == opponent => {
-                    respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
-                    continue;
-                }
                 Some(interaction) if interaction.user.id == player => {
+                    dbg!("player move");
+                    dbg!("Deferring");
                     interaction.defer(&ctx.discord().http).await?;
                     interaction.data.custom_id.as_str()
                 }
+                Some(interaction) if interaction.user.id == opponent => {
+                    dbg!("opponent move");
+                    respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
+                    continue;
+                }
                 Some(interaction) => {
+                    dbg!("non player move");
                     respond_ephemeral(ctx, interaction, "You're not a player in that lobby.")
                         .await?;
                     continue;
@@ -346,6 +351,7 @@ impl Game {
                 Some(interaction) => {
                     let from_player = interaction.user.id == player;
                     let from_opponent = interaction.user.id == opponent;
+                    dbg!(from_player, from_opponent);
                     match interaction.data.custom_id.as_str() {
                         "accept" if from_player => ("Accepted.", Move::Draw),
                         "accept" if from_opponent => {
@@ -459,14 +465,18 @@ impl Game {
             interaction = interactions.next().await;
             let button = match &interaction {
                 Some(interaction) if interaction.user.id == player => {
+                    dbg!("player move");
+                    dbg!("Deferring");
                     interaction.defer(&ctx.discord().http).await?;
                     interaction.data.custom_id.as_str()
                 }
                 Some(interaction) if interaction.user.id == opponent => {
+                    dbg!("opponent move");
                     respond_ephemeral(ctx, interaction, "It's not your turn.").await?;
                     continue;
                 }
                 Some(interaction) => {
+                    dbg!("non player move");
                     respond_ephemeral(ctx, interaction, "You are not a player in this game.")
                         .await?;
                     continue;
