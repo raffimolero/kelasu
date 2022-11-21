@@ -5,7 +5,7 @@ use kelasu_game::{
 };
 use poise::{
     futures_util::StreamExt,
-    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, Message, UserId},
+    serenity_prelude::{self as serenity, ButtonStyle, CreateComponents, EmojiId, Message, UserId},
 };
 use tokio::time::Duration;
 use tracing::info;
@@ -455,7 +455,7 @@ impl Game {
                 .create_button(|b| {
                     b.custom_id("merge")
                         .label("Merge")
-                        .emoji('♻')
+                        .emoji(EmojiId(1044186981170683975))
                         .style(ButtonStyle::Success)
                 })
             })
