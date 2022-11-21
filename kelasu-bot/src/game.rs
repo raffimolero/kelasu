@@ -537,7 +537,7 @@ impl Game {
                     [] => Say("Select a piece."),
                     &[_single] => Say("Where do you want the piece to go?"),
                     &[from, to] => MakeMove(Move::Move { from, to }),
-                    _ => Say("You selected too many pieces."),
+                    _ => Say("You selected too many tiles."),
                 },
                 "merge" => {
                     let response = self

@@ -390,24 +390,18 @@ impl Game {
         matches!(self.state, GameState::Ongoing { .. })
     }
 
-    pub fn verify_move(
-        board: &Board,
-        turn: Team,
-        locked_tiles: &[Pos],
-        from: Pos,
-        to: Pos,
-    ) -> Result<(), InvalidMove> {
+    pub fn verify_move(&self, from: Pos, to: Pos) -> Result<(), InvalidMove> {
         // we don't have to check for power because it should immediately switch turns then
 
-        if [from, to].iter().any(|p| locked_tiles.contains(p)) {
+        if self.locked_tiles.contains(&from) {
             return Err(InvalidMove::DoubleMove);
         }
 
-        let Tile(Some(piece)) = board[from] else {
+        let Tile(Some(piece)) = self.board[from] else {
             return Err(InvalidMove::EmptyTile);
         };
 
-        if piece.team != turn {
+        if piece.team != self.turn {
             return Err(InvalidMove::NotYourPiece);
         }
 
@@ -426,22 +420,22 @@ impl Game {
                 temp = temp
                     .shift(dx, dy)
                     .expect("from and to are guaranteed to be within bounds.");
-                if board[temp].0.is_some() {
+                if self.board[temp].0.is_some() {
                     Err(InvalidPieceMove::Blocked)?;
                 }
             }
         }
 
-        if board[to].0.map_or(false, |t| t.team == turn) {
+        if self.board[to].0.map_or(false, |t| t.team == self.turn) {
             Err(InvalidPieceMove::FriendlyFire)?;
         }
 
         match move_kind {
-            MoveKind::MoveOnly if board[to].0.is_some() => Err(InvalidPieceMove::Blocked),
-            MoveKind::CaptureOnly | MoveKind::Convert if board[to].0.is_none() => {
+            MoveKind::MoveOnly if self.board[to].0.is_some() => Err(InvalidPieceMove::Blocked),
+            MoveKind::CaptureOnly | MoveKind::Convert if self.board[to].0.is_none() => {
                 Err(InvalidPieceMove::MustCapture)
             }
-            MoveKind::MoveMoveCapture if dist == 1 && board[to].0.is_some() => {
+            MoveKind::MoveMoveCapture if dist == 1 && self.board[to].0.is_some() => {
                 Err(InvalidPieceMove::RunnerNoMelee)
             }
             MoveKind::Recall if dist < range => Err(InvalidPieceMove::CannotRecallHere),
@@ -450,28 +444,23 @@ impl Game {
         Ok(())
     }
 
-    /// the number of pieces required for the merge kind is checked during parsing
+    /// the number of pieces required for the merge kind is checked during input
     ///
     /// juuust in case people specify 10,000 different pieces
-    pub fn verify_merge(
-        board: &Board,
-        turn: Team,
-        locked_tiles: &[Pos],
-        pieces: &mut [Pos],
-    ) -> Result<(), InvalidMove> {
-        let home_rows = match turn {
+    pub fn verify_merge(&self, pieces: &mut [Pos]) -> Result<(), InvalidMove> {
+        let home_rows = match self.turn {
             Team::Blue => 00..20,
             Team::Red => 90..100,
         };
 
         for p in pieces.iter() {
-            if locked_tiles.contains(p) {
+            if self.locked_tiles.contains(p) {
                 return Err(InvalidMove::DoubleMove);
             }
-            let Some(piece) = board[*p].0 else {
+            let Some(piece) = self.board[*p].0 else {
                 return Err(InvalidMove::EmptyTile);
             };
-            if piece.team != turn {
+            if piece.team != self.turn {
                 return Err(InvalidMove::NotYourPiece);
             }
             if piece.kind != PieceKind::Blank {
@@ -501,12 +490,8 @@ impl Game {
             Move::DeclineDraw if draw_offered => Ok(()),
             Move::DeclineDraw => Err(InvalidMove::DrawNotOffered),
             _ if draw_offered => Err(InvalidMove::DrawOffered),
-            Move::Move { from, to } => {
-                Self::verify_move(&self.board, self.turn, &self.locked_tiles, *from, *to)
-            }
-            Move::Merge { kind: _, pieces } => {
-                Self::verify_merge(&self.board, self.turn, &self.locked_tiles, pieces)
-            }
+            Move::Move { from, to } => self.verify_move(*from, *to),
+            Move::Merge { kind: _, pieces } => self.verify_merge(pieces),
         }
         .map(|_| VerifiedMove(p_move))
     }
