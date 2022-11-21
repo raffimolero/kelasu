@@ -48,7 +48,7 @@ pub enum InvalidPieceMove {
     #[error("You cannot capture or move into your own pieces.")]
     FriendlyFire,
     #[error("Runners cannot capture within a range of 1.")]
-    RunnerNoMelee,
+    NoMelee,
     #[error("Warriors can only return if they are on the opposite row.")]
     CannotRecallHere,
     #[error("Only Blanks can merge together.")]

@@ -436,7 +436,7 @@ impl Game {
                 Err(InvalidPieceMove::MustCapture)
             }
             MoveKind::MoveMoveCapture if dist == 1 && self.board[to].0.is_some() => {
-                Err(InvalidPieceMove::RunnerNoMelee)
+                Err(InvalidPieceMove::NoMelee)
             }
             MoveKind::Recall if dist < range => Err(InvalidPieceMove::CannotRecallHere),
             _ => Ok(()),

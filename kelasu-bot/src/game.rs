@@ -38,7 +38,7 @@ impl Game {
         }
     }
 
-    fn board_repr(&self, power: u8, positions: &[Pos], held_digit: Option<i8>) -> String {
+    fn board_repr(&self, positions: &[Pos], held_digit: Option<i8>) -> String {
         /*
         000: None
         001: Left
@@ -83,14 +83,13 @@ impl Game {
         }
 
         // this string is only for reference, it will not actually be displayed :P
-        // ║═╔╗╚
         let board_repr_len = "\
-            ```\n\
+            ```hs\n\
             Energy: ########\n\
-               ╔-0-1-2-3-4-5-6-7-8-9-╗\n\
+               ╔[0-1-2-3-4-5-6-7-8-9]╗\n\
              0 ║[B|B(B)B B B B B B[B]║ 0\n\
              1 ║ B B B B B B B B B B ║ 1\n\
-             2 ║ s   s  [ | | ]s   s ║ 2\n\
+             2 ║ S   S  [ | | ]S   S ║ 2\n\
             <3=║-.-.-.-.-.-.-.-.-.-.-║=3>\n\
              4 ║         : :         ║ 4\n\
              5 ║         : :         ║ 5\n\
@@ -98,16 +97,16 @@ impl Game {
              7 ║ s   s         s   s ║ 7\n\
              8 ║ b b b b b b b b b b ║ 8\n\
              9 ║ b b b b b b b b b b ║ 9\n\
-               ╚-0-1-2-3-4-5-6-7-8-9-╝\n\
+               ╚[0-1-2-3-4-5-6-7-8-9]╝\n\
             ```"
         .len();
 
         let mut out = String::with_capacity(board_repr_len);
-        out.push_str("```\nEnergy: ");
-        for _ in 0..power {
+        out.push_str("```hs\nEnergy: ");
+        for _ in 0..self.game.power {
             out.push('#');
         }
-        out.push_str("\n   ╔-0-1-2-3-4-5-6-7-8-9-╗\n");
+        out.push_str("\n   ╔[0-1-2-3-4-5-6-7-8-9]╗\n");
         for (y, row) in self.game.board.tiles.chunks(10).enumerate() {
             let row_selected = held_digit.map_or(false, |d| d == y as i8);
             let line = if row_selected { b"<=.=>" } else { b"     " }.map(|b| b as char);
@@ -136,7 +135,7 @@ impl Game {
             out.push(line[4]);
             out.push('\n');
         }
-        out.push_str("   ╚-0-1-2-3-4-5-6-7-8-9-╝\n```");
+        out.push_str("   ╚[0-1-2-3-4-5-6-7-8-9]╝\n```");
 
         out
     }
@@ -429,22 +428,10 @@ impl Game {
             })
             .create_action_row(|r| {
                 r.create_button(|b| {
-                    b.custom_id("resign")
-                        .label("Resign")
-                        .emoji('⚠')
-                        .style(ButtonStyle::Danger)
-                })
-                .create_button(|b| {
-                    b.custom_id("draw")
-                        .label("Draw")
-                        .emoji('🤝')
-                        .style(ButtonStyle::Primary)
-                })
-                .create_button(|b| {
-                    b.custom_id("reset")
-                        .label("Reset")
-                        .emoji('🔄')
-                        .style(ButtonStyle::Primary)
+                    b.custom_id("merge")
+                        .label("Merge")
+                        .emoji(EmojiId(1044186981170683975))
+                        .style(ButtonStyle::Success)
                 })
                 .create_button(|b| {
                     b.custom_id("move")
@@ -453,17 +440,29 @@ impl Game {
                         .style(ButtonStyle::Success)
                 })
                 .create_button(|b| {
-                    b.custom_id("merge")
-                        .label("Merge")
-                        .emoji(EmojiId(1044186981170683975))
-                        .style(ButtonStyle::Success)
+                    b.custom_id("reset")
+                        .label("Reset")
+                        .emoji('🔄')
+                        .style(ButtonStyle::Primary)
+                })
+                .create_button(|b| {
+                    b.custom_id("draw")
+                        .label("Draw")
+                        .emoji('🤝')
+                        .style(ButtonStyle::Primary)
+                })
+                .create_button(|b| {
+                    b.custom_id("resign")
+                        .label("Resign")
+                        .emoji('⚠')
+                        .style(ButtonStyle::Danger)
                 })
             })
         }
 
         let reply = ctx
             .send(|b| {
-                b.content(self.board_repr(self.game.power, &positions, held_digit))
+                b.content(self.board_repr(&positions, held_digit))
                     .components(|c| add_components(c))
             })
             .await?;
@@ -614,7 +613,7 @@ impl Game {
 
             message
                 .edit(&ctx.discord().http, |m| {
-                    m.content(self.board_repr(self.game.power, &positions, held_digit))
+                    m.content(self.board_repr(&positions, held_digit))
                         .components(|c| add_components(c))
                 })
                 .await?;
