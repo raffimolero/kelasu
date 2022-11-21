@@ -9,6 +9,8 @@ edition = "2021"
 poise = "0.4.1"
 kelasu-game = { path = "../kelasu-game" }
 tokio = { version = "1.21.2", features = ["rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
 dotenv = "0.15.0"
 thiserror = "1.0.37"
 rand = "0.8.5"

@@ -3,6 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use kelasu_game::piece::Team;
 use poise::serenity_prelude::{self as serenity, RwLock};
+use tracing::info;
+use tracing_subscriber;
 
 mod game;
 mod lobby;
@@ -140,7 +142,7 @@ async fn join(
     };
     let mut lobbies = ctx.data().lobbies.write().await;
     if let Some(_lobby) = lobbies.remove(&name) {
-        ctx.say(format!("Closed `{name}`.")).await?;
+        ctx.say(format!("Closed lobby: `{name}`.")).await?;
     } else {
         ctx.say(format!("The lobby `{name}` just disappeared?"))
             .await?;
@@ -156,6 +158,7 @@ async fn register(ctx: Context<'_>) -> Result<(), Error> {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![host(), join(), lobbies(), register()],

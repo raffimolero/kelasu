@@ -114,9 +114,9 @@ impl Lobby {
                 m.content(prefs_format(&prefs, players)).components(|c| {
                     c.create_action_row(|r| {
                         r.create_button(|b| {
-                            b.custom_id("blue")
-                                .label("Blue")
-                                .style(serenity::ButtonStyle::Primary)
+                            b.custom_id("red")
+                                .label("Red")
+                                .style(serenity::ButtonStyle::Danger)
                         })
                         .create_button(|b| {
                             b.custom_id("either")
@@ -124,9 +124,9 @@ impl Lobby {
                                 .style(serenity::ButtonStyle::Secondary)
                         })
                         .create_button(|b| {
-                            b.custom_id("red")
-                                .label("Red")
-                                .style(serenity::ButtonStyle::Danger)
+                            b.custom_id("blue")
+                                .label("Blue")
+                                .style(serenity::ButtonStyle::Primary)
                         })
                     })
                 })
@@ -145,11 +145,11 @@ impl Lobby {
                 )).await?;
                 break;
             };
+            interaction.defer(&ctx.discord().http).await?;
             if !players.contains(&interaction.user.id) {
                 respond_ephemeral(ctx, &interaction, "You are not in that lobby.").await?;
                 continue;
             }
-            interaction.defer(&ctx.discord().http).await?;
 
             let pref = match interaction.data.custom_id.as_str() {
                 "blue" => TeamPreference::Blue,
