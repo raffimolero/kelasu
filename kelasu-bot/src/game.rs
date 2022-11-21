@@ -470,8 +470,6 @@ impl Game {
             let button = match &interaction {
                 Some(interaction) if interaction.user.id == player => {
                     dbg!("player move");
-                    dbg!("Deferring");
-                    interaction.defer(&ctx.discord().http).await?;
                     interaction.data.custom_id.as_str()
                 }
                 Some(interaction) if interaction.user.id == opponent => {
@@ -557,22 +555,12 @@ impl Game {
                 "9" => Digit(9),
                 _ => Say("Unknown button..."),
             };
-            match instruction {
-                Noop => {}
-                Say(message) => {
-                    if let Some(interaction) = interaction {
-                        respond_ephemeral(ctx, &interaction, message).await?;
-                    }
-                }
+            let response = match instruction {
+                Noop => None,
+                Say(message) => Some(message.to_owned()),
                 MakeMove(p_move) => match self.game.verify_move(p_move) {
                     Ok(p_move) => break p_move,
-                    Err(e) => {
-                        if let Some(interaction) = interaction {
-                            respond_ephemeral(ctx, &interaction, format!("Invalid move: {e}"))
-                                .await?;
-                        }
-                        reset(&mut held_digit, &mut positions);
-                    }
+                    Err(e) => Some(format!("Invalid move: {e}")),
                 },
                 Digit(num) => match held_digit.take() {
                     Some(tens) => {
@@ -590,11 +578,27 @@ impl Game {
                             }
                             None => positions.push(cursor),
                         }
+                        None
                     }
-                    None => held_digit = Some(num),
+                    None => {
+                        held_digit = Some(num);
+                        None
+                    }
                 },
-                Reset => reset(&mut held_digit, &mut positions),
+                Reset => {
+                    reset(&mut held_digit, &mut positions);
+                    None
+                }
+            };
+            if let Some(interaction) = interaction {
+                if let Some(response) = response {
+                    respond_ephemeral(ctx, &interaction, response).await?;
+                } else {
+                    dbg!("deferring...");
+                    interaction.defer(&ctx.discord().http).await?;
+                }
             }
+
             message
                 .edit(&ctx.discord().http, |m| {
                     m.content(self.board_repr(self.game.power, &positions, held_digit))
