@@ -393,7 +393,7 @@ impl Game {
             })
             .await?;
 
-        Ok(self.game.verify_move(p_move).unwrap())
+        Ok(self.game.verify_action(p_move).unwrap())
     }
 
     async fn make_move(
@@ -571,7 +571,7 @@ impl Game {
             let response = match instruction {
                 Noop => None,
                 Say(message) => Some(message.to_owned()),
-                MakeMove(p_move) => match self.game.verify_move(p_move) {
+                MakeMove(p_move) => match self.game.verify_action(p_move) {
                     Ok(p_move) => break p_move,
                     Err(e) => Some(format!("Invalid move: {e}")),
                 },
