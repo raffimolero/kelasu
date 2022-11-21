@@ -196,8 +196,8 @@ impl Game {
         let mut interaction;
         let button = loop {
             interaction = interactions.next().await;
-            info!("interaction received");
             if let Some(interaction) = &interaction {
+                info!("interaction received: {}", interaction.data.custom_id);
                 interaction.defer(&ctx.discord().http).await?;
             }
             break match &interaction {
@@ -270,8 +270,8 @@ impl Game {
         let mut interaction;
         let button = loop {
             interaction = interactions.next().await;
-            info!("interaction received");
             if let Some(interaction) = &interaction {
+                info!("interaction received: {}", interaction.data.custom_id);
                 interaction.defer(&ctx.discord().http).await?;
             }
             break match &interaction {
@@ -355,8 +355,8 @@ impl Game {
         let mut interaction;
         let (response, p_move) = loop {
             interaction = interactions.next().await;
-            info!("interaction received");
             if let Some(interaction) = &interaction {
+                info!("interaction received: {}", interaction.data.custom_id);
                 interaction.defer(&ctx.discord().http).await?;
             }
             break match &interaction {
@@ -475,8 +475,8 @@ impl Game {
         let mut interaction;
         let p_move = loop {
             interaction = interactions.next().await;
-            info!("interaction received");
             if let Some(interaction) = &interaction {
+                info!("interaction received: {}", interaction.data.custom_id);
                 interaction.defer(&ctx.discord().http).await?;
             }
             let button = match &interaction {

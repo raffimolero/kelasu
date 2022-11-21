@@ -9,6 +9,7 @@ use poise::{
     futures_util::StreamExt,
     serenity_prelude::{self as serenity, User, UserId},
 };
+use tracing::info;
 
 pub type LobbyId = Arc<String>;
 
@@ -145,6 +146,7 @@ impl Lobby {
                 )).await?;
                 break;
             };
+            info!("interaction received: {}", interaction.data.custom_id);
             interaction.defer(&ctx.discord().http).await?;
             if !players.contains(&interaction.user.id) {
                 respond_ephemeral(ctx, &interaction, "You are not in that lobby.").await?;
