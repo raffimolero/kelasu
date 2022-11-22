@@ -85,35 +85,43 @@ impl Game {
         // this string is only for reference, it will not actually be displayed :P
         let board_repr_len = "\
             ```hs\n\
-            Energy: ########\n\
+            Energy:# # # # # # # #\n\
+            \n\
                ╔[0-1-2-3-4-5-6-7-8-9]╗\n\
-             0 ║[B|B(B)B B B B B B[B]║ 0\n\
-             1 ║ B B B B B B B B B B ║ 1\n\
-             2 ║ S   S  [ | | ]S   S ║ 2\n\
-            <3=║-.-.-.-.-.-.-.-.-.-.-║=3>\n\
-             4 ║         : :         ║ 4\n\
-             5 ║         : :         ║ 5\n\
-             6 ║                     ║ 6\n\
-             7 ║ s   s         s   s ║ 7\n\
-             8 ║ b b b b b b b b b b ║ 8\n\
-             9 ║ b b b b b b b b b b ║ 9\n\
+             A ║[B|B(B)B B B B B B[B]║ A\n\
+             B ║ B B B B B B B B B B ║ B\n\
+             C ║ S   S  [ | | ]S   S ║ C\n\
+           \"D=║-.-.-.-.-.-.-.-.-.-.-║=D\"\n\
+             E ║         : :         ║ E\n\
+             F ║         : :         ║ F\n\
+             G ║                     ║ G\n\
+             H ║ s   s         s   s ║ H\n\
+             I ║ b b b b b b b b b b ║ I\n\
+             J ║ b b b b b b b b b b ║ J\n\
                ╚[0-1-2-3-4-5-6-7-8-9]╝\n\
             ```"
         .len();
 
+        fn push_energy(out: &mut String, power: u8) {
+            out.push_str("\nEnergy:");
+            for _ in 0..power {
+                out.push_str(" #");
+            }
+            out.push('\n');
+        }
+
         let mut out = String::with_capacity(board_repr_len);
-        out.push_str("```hs\nEnergy: ");
-        for _ in 0..self.game.power {
-            out.push('#');
+        out.push_str("```hs");
+        if self.game.turn == Team::Blue {
+            push_energy(&mut out, self.game.power);
         }
         out.push_str("\n   ╔[0-1-2-3-4-5-6-7-8-9]╗\n");
-        for (y, row) in self.game.board.tiles.chunks(10).enumerate() {
+        for (y, (row, rank)) in self.game.board.tiles.chunks(10).zip('A'..='J').enumerate() {
             let row_selected = held_digit.map_or(false, |d| d == y as i8);
-            let line = if row_selected { b"<=.=>" } else { b"     " }.map(|b| b as char);
-            let digit = char::from_digit(y as u32, 10).unwrap();
+            let line = if row_selected { b"\"=.=\"" } else { b"     " }.map(|b| b as char);
 
             out.push(line[0]);
-            out.push(digit);
+            out.push(rank);
             out.push(line[1]);
             out.push('║');
             for (x, tile) in row.iter().enumerate() {
@@ -131,11 +139,15 @@ impl Game {
             out.push(fence_icon(fences[y][10]));
             out.push('║');
             out.push(line[3]);
-            out.push(digit);
+            out.push(rank);
             out.push(line[4]);
             out.push('\n');
         }
-        out.push_str("   ╚[0-1-2-3-4-5-6-7-8-9]╝\n```");
+        out.push_str("   ╚[0-1-2-3-4-5-6-7-8-9]╝\n");
+        if self.game.turn == Team::Red {
+            push_energy(&mut out, self.game.power);
+        }
+        out.push_str("```");
 
         out
     }
@@ -160,7 +172,7 @@ impl Game {
             .edit(&ctx.discord().http, |b| {
                 b.embed(|e| e.title("What shall be born of this ritual?"))
                     .components(|c| {
-                        for row in pieces.chunks(3) {
+                        for row in pieces.chunks(2) {
                             c.create_action_row(|r| {
                                 for (kind, emoji) in row {
                                     r.create_button(|b| {
@@ -415,16 +427,35 @@ impl Game {
         let mut held_digit = None;
         let mut positions: Vec<Pos> = Vec::with_capacity(10);
 
-        fn add_components(c: &mut CreateComponents) -> &mut CreateComponents {
+        fn add_components(c: &mut CreateComponents, alphabet: bool) -> &mut CreateComponents {
+            let labels = if alphabet {
+                b"ABCDEFGHIJ"
+            } else {
+                b"0123456789"
+            }
+            .map(|b| b as char);
             c.create_action_row(|r| {
-                (0..5).into_iter().fold(r, |r, i| {
-                    r.create_button(|b| b.custom_id(i).label(i).style(ButtonStyle::Secondary))
+                labels[0..4].into_iter().fold(r, |r, id| {
+                    r.create_button(|b| b.custom_id(id).label(id).style(ButtonStyle::Secondary))
                 })
             })
             .create_action_row(|r| {
-                (5..10).fold(r, |r, i| {
-                    r.create_button(|b| b.custom_id(i).label(i).style(ButtonStyle::Secondary))
+                labels[4..8].into_iter().fold(r, |r, id| {
+                    r.create_button(|b| b.custom_id(id).label(id).style(ButtonStyle::Secondary))
                 })
+            })
+            .create_action_row(|r| {
+                labels[8..10]
+                    .into_iter()
+                    .fold(r, |r, id| {
+                        r.create_button(|b| b.custom_id(id).label(id).style(ButtonStyle::Secondary))
+                    })
+                    .create_button(|b| {
+                        b.custom_id("reset")
+                            .label("Reset")
+                            .emoji('🔄')
+                            .style(ButtonStyle::Primary)
+                    })
             })
             .create_action_row(|r| {
                 r.create_button(|b| {
@@ -438,12 +469,6 @@ impl Game {
                         .label("Move")
                         .emoji('♐')
                         .style(ButtonStyle::Success)
-                })
-                .create_button(|b| {
-                    b.custom_id("reset")
-                        .label("Reset")
-                        .emoji('🔄')
-                        .style(ButtonStyle::Primary)
                 })
                 .create_button(|b| {
                     b.custom_id("draw")
@@ -463,7 +488,7 @@ impl Game {
         let reply = ctx
             .send(|b| {
                 b.content(self.board_repr(&positions, held_digit))
-                    .components(|c| add_components(c))
+                    .components(|c| add_components(c, held_digit.is_none()))
             })
             .await?;
 
@@ -555,16 +580,16 @@ impl Game {
                         Noop
                     }
                 }
-                "0" => Digit(0),
-                "1" => Digit(1),
-                "2" => Digit(2),
-                "3" => Digit(3),
-                "4" => Digit(4),
-                "5" => Digit(5),
-                "6" => Digit(6),
-                "7" => Digit(7),
-                "8" => Digit(8),
-                "9" => Digit(9),
+                "0" | "A" => Digit(0),
+                "1" | "B" => Digit(1),
+                "2" | "C" => Digit(2),
+                "3" | "D" => Digit(3),
+                "4" | "E" => Digit(4),
+                "5" | "F" => Digit(5),
+                "6" | "G" => Digit(6),
+                "7" | "H" => Digit(7),
+                "8" | "I" => Digit(8),
+                "9" | "J" => Digit(9),
                 _ => Say("Unknown button..."),
             };
             let response = match instruction {
@@ -614,7 +639,7 @@ impl Game {
             message
                 .edit(&ctx.discord().http, |m| {
                     m.content(self.board_repr(&positions, held_digit))
-                        .components(|c| add_components(c))
+                        .components(|c| add_components(c, held_digit.is_none()))
                 })
                 .await?;
         };

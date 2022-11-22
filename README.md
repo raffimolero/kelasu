@@ -9,177 +9,320 @@
 
 \- MaxTheFox
 
-## Components
+# Board
+
+An empty board, with the 4 Victory Tiles located in the middle, looks like this:
+
+```hs
+   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║                     ║ A
+ B ║                     ║ B
+ C ║                     ║ C
+ D ║                     ║ D
+ E ║         : :         ║ E
+ F ║         : :         ║ F
+ G ║                     ║ G
+ H ║                     ║ H
+ I ║                     ║ I
+ J ║                     ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝
+```
+
+It is a 10 by 10 board, where **Ranks** are labeled with **letters** and **Files** are labeled with **numbers**, unlike Chess.
+
+This is the `D`-Rank:
+
+```hs
+   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║                     ║ A
+ B ║                     ║ B
+ C ║                     ║ C
+"D=║-.-.-.-.-.-.-.-.-.-.-║=D"
+ E ║                     ║ E
+ F ║         : :         ║ F
+ G ║                     ║ G
+ H ║                     ║ H
+ I ║                     ║ I
+ J ║                     ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝
+```
+
+This is `D2`:
+
+```hs
+   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║                     ║ A
+ B ║                     ║ B
+ C ║                     ║ C
+ D ║    ( )              ║ D
+ E ║         : :         ║ E
+ F ║         : :         ║ F
+ G ║                     ║ G
+ H ║                     ║ H
+ I ║                     ║ I
+ J ║                     ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝
+```
+
+# Pieces
+
+The different pieces move in different ways, and capture as in chess.
+
+|    Icon     | Meaning        |
+| :---------: | :------------- |
+| `UPPERCASE` | **Blue** Piece |
+| `lowercase` | **Red** Piece  |
+|     `.`     | Move Only      |
+|     `#`     | Move/Capture   |
+|     `*`     | Must Capture   |
+|     `%`     | Convert        |
+|     `@`     | Recall         |
+
+```hs
+                        Blanks
+                ╔[0-1-2-3-4-5-6-7-8-9]╗
+              A ║                     ║ A
+              B ║                     ║ B
+              C ║     . B .           ║ C
+              D ║       .             ║ D
+              E ║                     ║ E
+              F ║                     ║ F
+              G ║             .       ║ G
+              H ║           . b .     ║ H
+              I ║                     ║ I
+              J ║                     ║ J
+                ╚[0-1-2-3-4-5-6-7-8-9]╝
+
+-------------------------------------------------------
+
+          Warriors              Red Warrior Recall
+   ╔[0-1-2-3-4-5-6-7-8-9]╗   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║                     ║ A ║         # w #       ║ A
+ B ║                     ║ B ║                     ║ B
+ C ║     # W #           ║ C ║                     ║ C
+ D ║     + # +           ║ D ║                     ║ D
+ E ║                     ║ E ║                     ║ E
+ F ║                     ║ F ║                     ║ F
+ G ║           + # +     ║ G ║                     ║ G
+ H ║           # w #     ║ H ║                     ║ H
+ I ║                     ║ I ║                     ║ I
+ J ║                     ║ J ║           @         ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝   ╚[0-1-2-3-4-5-6-7-8-9]╝
+
+-- At the end of the board, Warriors can "Recall" back to their home rank. This does not collide with any other pieces.
+-- Internally, this is implemented as "Teleport Backwards exactly 9 tiles."
+
+-------------------------------------------------------
+
+                        Runner
+                ╔[0-1-2-3-4-5-6-7-8-9]╗
+              A ║ #               #   ║ A
+              B ║   #           #     ║ B
+              C ║     #       #       ║ C
+              D ║       .   .         ║ D
+              E ║         R           ║ E
+              F ║       .   .         ║ F
+              G ║     #       #       ║ G
+              H ║   #           #     ║ H
+              I ║ #               #   ║ I
+              J ║                   # ║ J
+                ╚[0-1-2-3-4-5-6-7-8-9]╝
+
+-- Move only for 1st step, infinite Move/Capture beyond.
+
+-------------------------------------------------------
+
+                        Diplomat
+                ╔[0-1-2-3-4-5-6-7-8-9]╗
+              A ║                     ║ A
+              B ║         .           ║ B
+              C ║         .           ║ C
+              D ║       % . %         ║ D
+              E ║   . . . D . . .     ║ E
+              F ║       % . %         ║ F
+              G ║         .           ║ G
+              H ║         .           ║ H
+              I ║                     ║ I
+              J ║                     ║ J
+                ╚[0-1-2-3-4-5-6-7-8-9]╝
+
+-- Converting a piece sacrifices the original Diplomat.
+
+-------------------------------------------------------
+
+        Blue Champion              Red Champion
+   ╔[0-1-2-3-4-5-6-7-8-9]╗   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║         .           ║ A ║           #         ║ A
+ B ║         .           ║ B ║           #         ║ B
+ C ║         .           ║ C ║           #         ║ C
+ D ║         .           ║ D ║           #         ║ D
+ E ║   # # # C # # #     ║ E ║         # # #       ║ E
+ F ║       # # #         ║ F ║     # # # c # # #   ║ F
+ G ║         #           ║ G ║           .         ║ G
+ H ║         #           ║ H ║           .         ║ H
+ I ║         #           ║ I ║           .         ║ I
+ J ║         #           ║ J ║           .         ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝   ╚[0-1-2-3-4-5-6-7-8-9]╝
+
+ -- Infinite Move/Capture forward, Infinite Move back.
+
+-------------------------------------------------------
+
+                        General
+                ╔[0-1-2-3-4-5-6-7-8-9]╗
+              A ║ #         #         ║ A
+              B ║   #       #       # ║ B
+              C ║     #     #     #   ║ C
+              D ║       #   #   #     ║ D
+              E ║         # # #       ║ E
+              F ║ # # # # # G # # # # ║ F
+              G ║         # # #       ║ G
+              H ║       #   #   #     ║ H
+              I ║     #     #     #   ║ I
+              J ║   #       #       # ║ J
+                ╚[0-1-2-3-4-5-6-7-8-9]╝
+
+       -- Infinite Move/Capture in 8 directions.
+
+-------------------------------------------------------
+
+                        Stones
+                ╔[0-1-2-3-4-5-6-7-8-9]╗
+              A ║                     ║ A
+              B ║                     ║ B
+              C ║ S   S         S   S ║ C
+              D ║                     ║ D
+              E ║                     ║ E
+              F ║                     ║ F
+              G ║                     ║ G
+              H ║ s   s         s   s ║ H
+              I ║                     ║ I
+              J ║                     ║ J
+                ╚[0-1-2-3-4-5-6-7-8-9]╝
+
+                -- Stones cannot move.
+```
+
+# Setup
+
+### Components:
 
 -   1 10x10 Board
--   2x Piece Set (**Red** and **Blue**)
+-   2x Piece Set (_Red_ and _Blue_)
 -   In each set:
     -   20x Blank
     -   10x Warrior
     -   5x Runner
     -   5x Diplomat
-    -   4x Champion
-    -   2x General
-    -   4x Stone
+    -   4x Champion\*
+    -   2x General\*
+    -   4x Stone\*
 
-## Setup
+> \* Because Diplomats can convert pieces, there can be up to 5 Champions, 3 Generals, or 8 Stones on one side at a time.
+>
+> This is solved the same way Physical Chess solves having up to 9 Queens: _by not solving it_
 
-The board, with the 4 victory squares located in the middle, is set up like this:
+The starting arrangement is as follows:
 
-```
-B B B B B B B B B B
-B B B B B B B B B B
-S   S         S   S
-
-        : :
-        : :
-
-s   s         s   s
-b b b b b b b b b b
-b b b b b b b b b b
-```
-
-Where:
-
-|  Character  | Tile                 |
-| :---------: | :------------------- |
-|     `B`     | Blue Blank           |
-|     `S`     | Blue Stone           |
-|     `b`     | Red Blank            |
-|     `s`     | Red Stone            |
-|     `:`     | Empty Victory Square |
-| `UPPERCASE` | Blue                 |
-| `lowercase` | Red                  |
-
-MOVEMENT AND CAPTURE
-Players take turns moving, as in other abstract games. Blue goes first.
-The number of pieces that can take part in a move is determined by the number of stones their player has - at the start it's 4.
-The different pieces move in different ways, and capture as in chess.
-
-| Icon | Meaning      |
-| :--: | :----------- |
-| `.`  | Move Only    |
-| `X`  | Move/Capture |
-| `*`  | Must Capture |
-| `%`  | Convert      |
-
-```
-Blank:
-
-
-
-
-          .
-        . b .
-
-
-
-
-
-Warrior:
-
-
-
-
-        * X *
-        X w X
-
-
-
-
-
-Runner: Move only for 1st
-X
-  X               X
-    X           X
-      X       X
-        .   .
-          r
-        .   .
-      X       X
-    X           X
-  X               X
-
-Diplomat:
-
-
-          .
-          .
-        % . %
-    . . . d . . .
-        % . %
-          .
-          .
-
-
-Champion: Infinite Move/Capture forward, Infinite Move back
-          X
-          X
-          X
-          X
-        X X X
-    X X X c X X X
-          .
-          .
-          .
-          .
-
-General: Infinite Move/Capture in all directions
-X         X
-  X       X       X
-    X     X     X
-      X   X   X
-        X X X
-X X X X X g X X X X
-        X X X
-      X   X   X
-    X     X     X
-  X       X       X
-
-Stone:
-
-
-
-
-
-          s
-
-
-
-
-
+```hs
+   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║ B B B B B B B B B B ║ A
+ B ║ B B B B B B B B B B ║ B
+ C ║ S   S         S   S ║ C
+ D ║                     ║ D
+ E ║         : :         ║ E
+ F ║         : :         ║ F
+ G ║                     ║ G
+ H ║ s   s         s   s ║ H
+ I ║ b b b b b b b b b b ║ I
+ J ║ b b b b b b b b b b ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝
 ```
 
-Converting a piece sacrifices the original Diplomat.
-Warriors can Recall to the first row of their side, on the same file, if they reach the end of the board.
+# Merging
 
-MERGING
-Notice how there are only blanks and stones on the board at the start.
-Blanks that are next to each other and outside of their starting 2 rows can merge into another piece on any of the blanks' squares.
-This counts as a move for every blank involved, but if you do not have enough stones it simply counts as the maximum amount of moves you have. The costs are as follows:
+Notice how the board starts with **just Blanks and Stones.**
 
-# TODO: MAKE TABLE
+Blanks that are next to each other and outside of their starting 2 rows can **Merge** into another piece on any of the blanks' squares.
 
-|Piece|Cost|
-Warrior = 2 blanks
-Runner = 4 blanks
-Diplomat = 4 blanks
-Champion = 5 blanks
-General = 10 blanks
-Stone = 21 blanks (:p)
+```hs
+   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║                     ║ A
+ B ║  [B]                ║ B
+ C ║   B    (B)          ║ C
+ D ║   B       B B       ║ D
+ E ║         B B         ║ E
+ F ║                     ║ F
+ G ║                     ║ G
+ H ║           B B       ║ H
+ I ║         B B         ║ I
+ J ║           B         ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝
 
-### Win Conditions
+-- [B1] cannot merge; it is within Blue's territory.
+-- (C4) does not connect to D5.
+-- [H5|H6|I4|I5]=>(J5) is valid; Blue can merge inside Red's territory.
+```
 
-The game is won by a player if:
+Different pieces cost different numbers of Blanks. The costs are as follows:
 
-1. The opponent resigns.
-2. The opponent has no stones left.
-3. The opponent has no non-stone pieces left.
-4. The player has 4 of their pieces in the 4 central squares.
+|  Piece   | Cost |
+| :------: | :--: |
+| Warrior  |  2   |
+|  Runner  |  4   |
+| Diplomat |  4   |
+| Champion |  5   |
+| General  |  10  |
+|  Stone   | 21\* |
 
-### Draw Conditions
+> \* the fact that stones can be made with 21 blanks is a totally necessary feature and is definitely not just a gimmick
+>
+> dude trust me
 
-1. 64-move rule, as in chess. The things that reset the counter are a blank move, a merging, or a capture.
-2. Fourfold repetition of the position.
-3. Both players being unable to achieve the win conditions. (not implemented)
-4. Stalemate, though this is extremely rare and achieving it probably requires breaking YLK rule 16.3.1 "Bringing the game into disrepute".
+# Turns
+
+Players take turns moving, as in other abstract games. **Blue goes first.** Yes, the player on **top**, not the player on the bottom.
+
+At the start of each turn, your _Energy_ is calculated as the number of **Stones** you have - at the start, it's 4:
+
+```hs
+Energy: # # # #
+
+   ╔[0-1-2-3-4-5-6-7-8-9]╗
+ A ║ B B B B B B B B B B ║ A
+ B ║ B B B B B B B B B B ║ B
+ C ║(S) (S)       (S) (S)║ C
+ D ║                     ║ D
+ E ║         : :         ║ E
+ F ║         : :         ║ F
+ G ║                     ║ G
+ H ║ s   s         s   s ║ H
+ I ║ b b b b b b b b b b ║ I
+ J ║ b b b b b b b b b b ║ J
+   ╚[0-1-2-3-4-5-6-7-8-9]╝
+```
+
+Once your energy runs out, your turn ends.
+
+All normal piece moves cost 1 Energy. _You cannot move the same piece twice in the same turn._
+
+Merging will cost you as much Energy as the **number of Blanks** used. If you do not have enough Energy, you may still merge, though this of course ends your turn. "Negative Energy" does **not** carry over to the next turn.
+
+Newly **merged** or **converted** pieces _can move on the same turn,_ provided the player has any remaining energy.
+
+# Endings
+
+### You Win if:
+
+1. Your opponent **Resigns.**
+2. Your opponent has **no Stones** left.
+3. Your opponent has **no** non-stone **Pieces** left.
+4. You occupy **all 4 Victory Tiles** at once.
+
+### The game is Drawn by:
+
+1. A mutual **agreement.**
+2. A **64-move rule,** as in Chess. The things that reset the counter are a **Blank** move, a **Merge,** or a **Capture.**
+3. **Fourfold** repetition of the position.
+4. Both players being unable to achieve the win conditions. **(Not Implemented, just manually offer a Draw.)**
+5. Stalemate, though this is extremely rare and achieving it probably requires breaking **YLK rule 16.3.1;** _"Bringing the game into disrepute"._
