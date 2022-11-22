@@ -1,13 +1,16 @@
 # Kelasu
 
--   Author: **MaxTheFox**
--   Original rules template: **KittyTac**
--   Implementation: **Redstoneboi** (raffimolero)
--   Version: **0.1**
+- Author: **MaxTheFox**
+- [Original rules template](https://pastebin.com/cCzZXVAw): **KittyTac**
+- Implementation and README: **Redstoneboi** (it me)
+- Discord Server management: **CCCFan**
+- Version: **0.1**
 
 > "This is an abstract game for my setting."
 
 \- MaxTheFox
+
+[Join our Discord :)](https://discord.gg/3jzTb6xbTM)
 
 # Board
 
