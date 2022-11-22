@@ -109,7 +109,8 @@ The different pieces move in different ways, and capture as in chess.
  J ║                     ║ J ║           @         ║ J
    ╚[0-1-2-3-4-5-6-7-8-9]╝   ╚[0-1-2-3-4-5-6-7-8-9]╝
 
--- At the end of the board, Warriors can "Recall" back to their home rank. This does not collide with any other pieces.
+-- At the end of the board, Warriors can "Recall" back to their home rank.
+-- This does not collide with any other pieces.
 -- Internally, this is implemented as "Teleport Backwards exactly 9 tiles."
 
 -------------------------------------------------------
@@ -170,16 +171,16 @@ The different pieces move in different ways, and capture as in chess.
 
                         General
                 ╔[0-1-2-3-4-5-6-7-8-9]╗
-              A ║ #         #         ║ A
-              B ║   #       #       # ║ B
-              C ║     #     #     #   ║ C
-              D ║       #   #   #     ║ D
-              E ║         # # #       ║ E
-              F ║ # # # # # G # # # # ║ F
-              G ║         # # #       ║ G
-              H ║       #   #   #     ║ H
-              I ║     #     #     #   ║ I
-              J ║   #       #       # ║ J
+              A ║ #       #       #   ║ A
+              B ║   #     #     #     ║ B
+              C ║     #   #   #       ║ C
+              D ║       # # #         ║ D
+              E ║ # # # # G # # # # # ║ E
+              F ║       # # #         ║ F
+              G ║     #   #   #       ║ G
+              H ║   #     #     #     ║ H
+              I ║ #       #       #   ║ I
+              J ║         #         # ║ J
                 ╚[0-1-2-3-4-5-6-7-8-9]╝
 
        -- Infinite Move/Capture in 8 directions.
