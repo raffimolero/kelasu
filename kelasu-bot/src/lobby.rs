@@ -96,7 +96,7 @@ impl Lobby {
         let mut prefs = [None, None];
         fn prefs_format(prefs: &[Option<TeamPreference>; 2], players: [UserId; 2]) -> String {
             format!(
-                "Which sides would you like to be on? You can change sides if your opponent hasn't decided.\n\
+                "Which side would you like to be on? You can change sides if your opponent hasn't decided.\n\
                 - <@{}>: {},\n\
                 - <@{}>: {}.\n",
                 players[0],
