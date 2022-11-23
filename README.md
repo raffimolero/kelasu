@@ -2,15 +2,13 @@
 
 - Author: **MaxTheFox**
 - [Original rules template](https://pastebin.com/cCzZXVAw): **KittyTac**
-- Implementation and README: **Redstoneboi** (it me)
-- Discord Server management: **CCCFan**
+- Implementation and README: **Redstoneboi** (a.k.a raffimolero)
+- [Discord Server](https://discord.gg/3jzTb6xbTM) management: **CCCFan**
 - Version: **0.1**
 
 > "This is an abstract game for my setting."
 
 \- MaxTheFox
-
-[Join our Discord :)](https://discord.gg/3jzTb6xbTM)
 
 # Board
 
@@ -112,9 +110,8 @@ The different pieces move in different ways, and capture as in chess.
  J ║                     ║ J ║           @         ║ J
    ╚[0-1-2-3-4-5-6-7-8-9]╝   ╚[0-1-2-3-4-5-6-7-8-9]╝
 
--- At the end of the board, Warriors can "Recall" back to their home rank.
--- This does not collide with any other pieces.
--- Internally, this is implemented as "Teleport Backwards exactly 9 tiles."
+-- Warriors can teleport backwards exactly 9 tiles to "Recall".
+   -- This does not collide with any other pieces.
 
 -------------------------------------------------------
 
@@ -150,7 +147,9 @@ The different pieces move in different ways, and capture as in chess.
               J ║                     ║ J
                 ╚[0-1-2-3-4-5-6-7-8-9]╝
 
--- Converting a piece sacrifices the original Diplomat.
+      -- Diplomats can Convert pieces to their side.
+-- Yes, you can convert stones to get more Energy per turn.
+  -- Converting a piece sacrifices the original Diplomat.
 
 -------------------------------------------------------
 
@@ -287,7 +286,7 @@ Different pieces cost different numbers of Blanks. The costs are as follows:
 
 Players take turns moving, as in other abstract games. **Blue goes first.** Yes, the player on **top**, not the player on the bottom.
 
-At the start of each turn, your _Energy_ is calculated as the number of **Stones** you have - at the start, it's 4:
+Players need _Energy_ to move. At the start of each turn, your Energy is calculated as the number of **Stones** you have - at the start, it's 4:
 
 ```hs
 Energy: # # # #
@@ -306,13 +305,13 @@ Energy: # # # #
    ╚[0-1-2-3-4-5-6-7-8-9]╝
 ```
 
-Once your energy runs out, your turn ends.
+Once your Energy runs out, your turn ends.
 
 All normal piece moves cost 1 Energy. _You cannot move the same piece twice in the same turn._
 
 Merging will cost you as much Energy as the **number of Blanks** used. If you do not have enough Energy, you may still merge, though this of course ends your turn. "Negative Energy" does **not** carry over to the next turn.
 
-Newly **merged** or **converted** pieces _can move on the same turn,_ provided the player has any remaining energy.
+Newly **merged** or **converted** pieces _can move (once) on the same turn,_ provided the player has any remaining energy.
 
 # Endings
 
