@@ -14,9 +14,13 @@ use thiserror::Error;
 mod tests;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Pos(pub i8);
+pub struct Pos(i8);
 
 impl Pos {
+    pub fn new(x: i8, y: i8) -> Self {
+        Self(y * 10 + x)
+    }
+
     /// returns one of the 8 possible directions. None if knightwise, for example.
     pub fn dir_to(self, rhs: Self) -> Option<([i8; 2], u8)> {
         let [x1, y1] = self.xy();

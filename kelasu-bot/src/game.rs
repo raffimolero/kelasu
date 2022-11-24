@@ -50,8 +50,8 @@ impl Game {
         111: Cursor Right
         */
 
-        fn xy(&Pos(p): &Pos) -> [usize; 2] {
-            [p as usize % 10, p as usize / 10]
+        fn xy(&p: &Pos) -> [usize; 2] {
+            p.xy().map(|d| d as usize)
         }
 
         let fences = {
@@ -601,7 +601,7 @@ impl Game {
                 },
                 Digit(num) => match held_digit.take() {
                     Some(tens) => {
-                        let cursor = Pos(tens * 10 + num);
+                        let cursor = Pos::new(num, tens);
                         match positions.iter().position(|p| *p == cursor) {
                             Some(idx) => {
                                 if idx == positions.len() - 1 {
