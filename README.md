@@ -326,7 +326,7 @@ Newly **merged** or **converted** pieces _can move on the same turn,_ provided t
 ### The game is Drawn by:
 
 1. A mutual **agreement.**
-2. A **64-move rule,** as in Chess. The things that reset the counter are a **Blank** move, a **Merge,** or a **Capture.**
+2. Making **64 full turns** without a **Blank** move, a **Merge,** or a **Capture.**
 3. **Fourfold** repetition of the position.
 4. Both players being unable to achieve the win conditions. **(Not Implemented, just manually offer a Draw.)**
 5. Stalemate, though this is extremely rare and achieving it probably requires breaking **YLK rule 16.3.1;** _"Bringing the game into disrepute"._
