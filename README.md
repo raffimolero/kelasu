@@ -41,7 +41,7 @@ This is the `D`-Rank:
  B ║                     ║ B
  C ║                     ║ C
 "D=║-.-.-.-.-.-.-.-.-.-.-║=D"
- E ║                     ║ E
+ E ║         : :         ║ E
  F ║         : :         ║ F
  G ║                     ║ G
  H ║                     ║ H
