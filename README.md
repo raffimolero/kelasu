@@ -10,7 +10,7 @@
 
 \- MaxTheFox
 
-[Join our Discord :)](https://discord.gg/3jzTb6xbTM)
+[Discord Link](https://discord.gg/3jzTb6xbTM) (dead lol)
 
 # Board
 
