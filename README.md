@@ -77,7 +77,7 @@ The different pieces move in different ways, and capture as in chess.
 | `lowercase` | **Red** Piece  |
 |     `.`     | Move Only      |
 |     `#`     | Move/Capture   |
-|     `*`     | Must Capture   |
+|     `+`     | Must Capture   |
 |     `%`     | Convert        |
 |     `@`     | Recall         |
 
